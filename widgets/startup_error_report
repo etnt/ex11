@@ -1,9 +1,10 @@
-$DISPLAY = :0.0
+$DISPLAY = :0
 parsed display Host=none DisplayNumber=0 ScreenNumber=0
-inet:gethostname() = "sredniczarny"
+inet:gethostname() = "hedlund"
 Es
-{unix,"sredniczarny","Code1"}
-{unix,"localhost.localdomain","Code1"}
+{unix,"rigel","Code1"}
+{unix,"hedlund","Code2"}
 Try list
+{unix,0,"Code2"}
+{{ip,"localhost"},0,"Code2"}
 {unix,0,"Code1"}
-{{ip,"localhost"},0,"Code1"}
