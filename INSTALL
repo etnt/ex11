@@ -1,0 +1,23 @@
+PREREQUISITES
+=============
+
+You may have to install the following to be able to compile everything:
+
+  sudo apt-get install libjpeg-dev
+
+
+COMPILING
+=========
+
+Just run:
+
+  make
+
+
+DEMO
+====
+
+To run the demo:
+
+  cd examples; make
+  
