@@ -20,7 +20,7 @@
 %%   connection is complex - mainly because some large data structures need
 %%   parsing.
 
-%% ex11_driver:start(Host) -> 
+%% ex11_driver:start(Host) ->
 %%    {ok, {Pid,Display, Screen}}  if the connection works
 %%                                 screen is the screen that was requested at
 %%                                 start
@@ -36,7 +36,7 @@
 -include("ex11_lib.hrl").
 
 new_id(Pid) -> rpc(Pid, create_id).
-    
+
 get_display(Pid, Key) -> rpc(Pid, {get_display, Key}).
 
 send_cmd(Pid, C) -> Pid ! {cmd, C}.
@@ -44,8 +44,8 @@ send_cmd(Pid, C) -> Pid ! {cmd, C}.
 rpc(Pid, Q) ->
     Pid ! {self(), Q},
     receive
-	{Pid, Reply} ->
-	    Reply
+        {Pid, Reply} ->
+            Reply
     end.
 
 start() ->
@@ -53,8 +53,8 @@ start() ->
     S = self(),
     Pid = spawn_link(fun() -> init(S) end),
     %% io:format("ex11_lib_driver start/1 Pid=~p~n",[Pid]),
-    receive 
-	{Pid,Ack} -> Ack 
+    receive
+        {Pid,Ack} -> Ack
     end.
 
 return(Pid, Val) ->
@@ -62,16 +62,16 @@ return(Pid, Val) ->
 
 init(From) ->
     case ex11_lib_connect:start() of
-	{ok, {Display, Screen, Fd}} ->
-	    %% io:format("Display=~p~n",[Display]),
-	    %% ?PRINT_DISPLAY(Display),
-	    %% Max command length 
-	    Max = Display#display.max_request_size,
-	    %% io:format("Max RequestSize=~p~n",[Max]),
-	    return(From, {ok, {self(), Display, Screen}}),
-	    driver_loop(From, Fd, Max);
-	Error -> 
-	    return(From, {error, connect})
+        {ok, {Display, Screen, Fd}} ->
+            %% io:format("Display=~p~n",[Display]),
+            %% ?PRINT_DISPLAY(Display),
+            %% Max command length
+            Max = Display#display.max_request_size,
+            %% io:format("Max RequestSize=~p~n",[Max]),
+            return(From, {ok, {self(), Display, Screen}}),
+            driver_loop(From, Fd, Max);
+        Error ->
+            return(From, {error, connect})
     end.
 
 driver_loop(Client, Fd, Max) ->
@@ -79,42 +79,42 @@ driver_loop(Client, Fd, Max) ->
 
 loop(Client, Fd, Bin, Max, OB, LO) ->
     receive
-	{cmd, C} ->
-	    if
-		size(C) + LO < Max ->
-		    %% io:format("storing~p bytes~n",[size(C)]),
-		    loop(Client, Fd, Bin, Max, [C|OB], LO + size(C));
-		true ->
-		    send(Fd, reverse(OB)),
-		    loop(Client, Fd, Bin, Max, [C], size(C))
-	    end;
-	flush ->
-	    %% io:format("Driver got flush~n"),
-	    send(Fd, reverse(OB)),
-	    loop(Client, Fd, Bin, Max, [], 0);
-	{tcp, Port, BinX} ->
-	    %% io:format("received:~p bytes~n",[size(BinX)]),
-	    Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
-	    loop(Client, Fd, Bin1, Max, OB, LO);
-	{unixdom, Socket, BinX} ->
-	    Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
-	    loop(Client, Fd, Bin1, Max, OB, LO);
-	{'EXIT', _, die} ->
-	    gen_tcp:close(Fd),
-	    exit(killed);
-	Any ->
-	    io:format("top_loop (driver) got:~p~n",[Any]),
-	    loop(Client, Fd, Bin, Max, OB, LO)
-	after 2000 ->
-		if
-		    LO > 0 ->
-			io:format("Flushing (forgotten xFlush() ???)~n"),
-			send(Fd, reverse(OB));
-		    true ->
-			void
-		end,
-		loop(Client, Fd, Bin, Max, [], 0)
-	end.
+        {cmd, C} ->
+            if
+                size(C) + LO < Max ->
+                    %% io:format("storing~p bytes~n",[size(C)]),
+                    loop(Client, Fd, Bin, Max, [C|OB], LO + size(C));
+                true ->
+                    send(Fd, reverse(OB)),
+                    loop(Client, Fd, Bin, Max, [C], size(C))
+            end;
+        flush ->
+            %% io:format("Driver got flush~n"),
+            send(Fd, reverse(OB)),
+            loop(Client, Fd, Bin, Max, [], 0);
+        {tcp, Port, BinX} ->
+            %% io:format("received:~p bytes~n",[size(BinX)]),
+            Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
+            loop(Client, Fd, Bin1, Max, OB, LO);
+        {unixdom, Socket, BinX} ->
+            Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
+            loop(Client, Fd, Bin1, Max, OB, LO);
+        {'EXIT', _, die} ->
+            gen_tcp:close(Fd),
+            exit(killed);
+        Any ->
+            io:format("top_loop (driver) got:~p~n",[Any]),
+            loop(Client, Fd, Bin, Max, OB, LO)
+    after 2000 ->
+            if
+                LO > 0 ->
+                    io:format("Flushing (forgotten xFlush() ???)~n"),
+                    send(Fd, reverse(OB));
+                true ->
+                    void
+            end,
+            loop(Client, Fd, Bin, Max, [], 0)
+    end.
 
 handle(Client, <<0:8,_/binary>>= B1) when size(B1) >= 31 ->
     %% error
@@ -137,12 +137,12 @@ decode_reply(Client, <<_:32,Len:32,_/binary>> = Bin) ->
     Size = size(Bin),
     %% io:format("Need=~p Size=~p~n",[Need,Size]),
     if
-	Need =< Size ->
-	    {Bin0, Bin1} = split_binary(Bin, Need),
-	    dispatch(Client, Bin0),
-	    handle(Client, Bin1);
-	Need > Size ->
-	    Bin
+        Need =< Size ->
+            {Bin0, Bin1} = split_binary(Bin, Need),
+            dispatch(Client, Bin0),
+            handle(Client, Bin1);
+        Need > Size ->
+            Bin
     end.
 
 dispatch(Client, <<1:8,_:8,Seq:16,_/binary>> = B) ->
@@ -163,9 +163,3 @@ send({tcp, Fd}, Bin) ->
 %     after T ->
 %	    true
 %    end.
-
-
-
-
-
-

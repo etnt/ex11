@@ -1,8 +1,8 @@
 
-  +------------------------------------------------------+
++------------------------------------------------------+
   |                                                      |
-  |  ex11 -- the Erlang X11 binding			 |
-  |							 |
+  |  ex11 -- the Erlang X11 binding                      |
+  |                                                      |
   +------------------------------------------------------+
 
 
@@ -34,7 +34,7 @@ have been successfully addressed:
 
      - Font matching and font metric querying
      - Displays in a fixed width font
-     - Colors 
+     - Colors
      - Mouse and mouse movement event handling
      - Graphic contexts
      - Line graphics
@@ -44,12 +44,12 @@ have been successfully addressed:
 
   And the following simple widgets have been programmed
 
-  - text widget (this widget) 
-  - slider widgets 
-  - entry widget 
-  - button widgets 
+  - text widget (this widget)
+  - slider widgets
+  - entry widget
+  - button widgets
   - JPG display widget
-     
+
   In addition arbitrary nested window structures can be created, and
 text and graphics can be displayed in any window.
 
@@ -63,7 +63,7 @@ very easy to change the code *without* changing to (say) C.
 C code, and  amazingly is is very fast. I suspect  the reason for this
 is that many abstraction layers have been removed.
 
-  The "traditional"  way of  building graphics is  Erlang has  been to
+  The "traditional"  way of  building graphics in  Erlang has  been to
 interface the language to some graphics package, like this:
 
     +----------------------------------+
@@ -91,7 +91,6 @@ entirely dispense  with the  C interface routines  and let  the Erlang
 programs communicate directly with the x server socket, something like
 this:
 
-				
     +----------------------------------+
     | Erlang                           |
     +----------------------------------+
@@ -102,12 +101,6 @@ this:
     | X11 server                       |
     +----------------------------------+
 
-  Have fun 
+  Have fun
 
   /Joe Armstrong
-
-
-
-
-
-

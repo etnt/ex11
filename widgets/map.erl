@@ -29,17 +29,17 @@ reformat(Rot, Threshold) ->
     Lines2 = make_lines(Lines1, []),
     %% io:format("Lines2=~p~n",[Lines2]),
     Lines3 = foldl(fun(X,A) ->
-			   if
-			       length(X) > Threshold ->
-				   X2 = map(fun({X1,Y1}) ->
-						    {trunc(1000*X1),
-						     trunc(1000*Y1)}
-					    end, X),
-				   [X2|A];
-			       true ->
-				   A
-			   end
-		   end, [], Lines2),
+                           if
+                               length(X) > Threshold ->
+                                   X2 = map(fun({X1,Y1}) ->
+                                                    {trunc(1000*X1),
+                                                     trunc(1000*Y1)}
+                                            end, X),
+                                   [X2|A];
+                               true ->
+                                   A
+                           end
+                   end, [], Lines2),
     file:write_file("mapdata.bin", [term_to_binary(Lines3)]).
 
 make_lines([L|T], Lns) ->
@@ -58,10 +58,10 @@ get_line(_X, _Y, [], L) ->
     {L, []};
 get_line(X, Y, [{X1,Y1}=H|T]=All, L) ->
     case near(X,Y,X1,Y1) of
-	true ->
-	    get_line(X1,Y1, T, [H|L]);
-	false ->
-	    {L, All}
+        true ->
+            get_line(X1,Y1, T, [H|L]);
+        false ->
+            {L, All}
     end.
 
 near(X1,Y1,X2,Y2) ->
@@ -84,7 +84,7 @@ parse([0|_T], L) ->
 parse([H|T], L) ->
     {Stuff, T1} = fetch(3*H+1, T, []),
     parse(T1, [Stuff|L]).
-    
+
 fetch(0, X, L)     -> {reverse(L), X};
 fetch(N, [H|T], L) -> fetch(N-1, T, [H|L]).
 
@@ -92,10 +92,10 @@ xyz2ll(Rot, Z, Y, X) ->
     D = math:sqrt(X*X+Y*Y+Z*Z),
     RtoD = 57.2958,
     C = 90 - (RtoD * math:acos(abs(Y)/D)),
-    Lat = if 
-	      Y < 0 -> -C;
-	      true  -> C
-	  end,
+    Lat = if
+              Y < 0 -> -C;
+              true  -> C
+          end,
     Long = rot(Rot, (RtoD*math:atan2(-X, Z))),
     {sane_lat(Lat), sane_long(Long)}.
 
@@ -126,6 +126,3 @@ sane_long(Long) when Long =< 0, Long >= -180 ->
 sane_long(Long) ->
     io:format("insane Long=~p~n",[Long]),
     Long.
-
-
-
