@@ -70,7 +70,7 @@ init(From) ->
             %% io:format("Max RequestSize=~p~n",[Max]),
             return(From, {ok, {self(), Display, Screen}}),
             driver_loop(From, Fd, Max);
-        Error ->
+        _Error ->
             return(From, {error, connect})
     end.
 
@@ -92,11 +92,11 @@ loop(Client, Fd, Bin, Max, OB, LO) ->
             %% io:format("Driver got flush~n"),
             send(Fd, reverse(OB)),
             loop(Client, Fd, Bin, Max, [], 0);
-        {tcp, Port, BinX} ->
-            %% io:format("received:~p bytes~n",[size(BinX)]),
+        {tcp, _Port, BinX} ->
+            io:format("~p: received:~p bytes~n",[?MODULE,size(BinX)]),
             Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
             loop(Client, Fd, Bin1, Max, OB, LO);
-        {unixdom, Socket, BinX} ->
+        {unixdom, _Socket, BinX} ->
             Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
             loop(Client, Fd, Bin1, Max, OB, LO);
         {'EXIT', _, die} ->
@@ -129,7 +129,7 @@ handle(Client, B1) when size(B1) >= 32 ->
     {E, Bin1} = split_binary(B1, 32),
     Client ! pEvent(E),
     handle(Client, Bin1);
-handle(Client, Bin) when size(Bin) < 32 ->
+handle(_Client, Bin) when size(Bin) < 32 ->
     Bin.
 
 decode_reply(Client, <<_:32,Len:32,_/binary>> = Bin) ->

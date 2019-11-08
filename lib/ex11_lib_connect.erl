@@ -64,7 +64,7 @@ start(Display) ->
                 {ok, {Host, DisplayNumber, ScreenNumber}}->
                     %% Get all the relevant entries from Xauth
                     Es = ex11_lib_xauth:get_display( Xauth, DisplayNumber),
-                    Es1 = map(fun({X,Y,_}) -> {X,Y} end, Es),
+                    %%Es1 = map(fun({X,Y,_}) -> {X,Y} end, Es),
                     %% io:format("Start Host=~p Es=~n~p~n",[Host,Es]),
                     Try = tryList(Host, DisplayNumber, Es),
                     %% io:format("Try these:~p~n",[Try]),
@@ -147,8 +147,8 @@ remove_duplicates([], L) ->
 
 
 tryList1(everything, Display, Es) ->
-    [{unix,Display,Code} || {unix,Name,Code} <- Es] ++
-        [{{ip,"localhost"},Display,Code} || {ip,Name,Code} <- Es];
+    [{unix,Display,Code} || {unix,_Name,Code} <- Es] ++
+        [{{ip,"localhost"},Display,Code} || {ip,_Name,Code} <- Es];
 tryList1(none, Display, Es) ->
     %% If no hostname given look up the hostname
     {ok, HostName} = inet:gethostname(),
@@ -185,10 +185,10 @@ matches1(_,_) -> false.
 %%     If Host = {ip,HostName} we open socket 6000+Display on HostName
 %%     If Host = unix          we open unix domain socket <Display>
 
-try_to_start([], Screen) -> error;
+try_to_start([], _Screen) -> error;
 try_to_start([H|T], Screen) ->
     case try_to_connect(H, Screen) of
-        O = {ok, D} ->
+        O = {ok, _D} ->
             O;
         {error, _} ->
             try_to_start(T, Screen)
@@ -205,7 +205,7 @@ try_to_connect({Host, Display, Cookie}, Screen) ->
     case connect(Host, Display) of
         {ok, Fd} ->
             io:format("Port opened sending cookie:~n"),
-            Res = send(Fd, ex11_lib:eConnect(Cookie)),
+            _Res = send(Fd, ex11_lib:eConnect(Cookie)),
             Bin = get_connect_reply(Fd, <<>>),
             case ex11_lib:pConnect(Bin, Screen) of
                 {ok, Dpy} ->
@@ -221,14 +221,23 @@ try_to_connect({Host, Display, Cookie}, Screen) ->
     end.
 
 connect(unix, Display) ->
+    Path = lists:flatten(io_lib:format("/tmp/.X11-unix/X~p", [Display])),
     case (catch unixdom2:module_info()) of
         {'EXIT',_} ->
-            {error,noUnixDomainSockets};
+            case gen_tcp:connect({local, Path}, 0, [local,
+                                                    {packet,raw},
+                                                    binary]) of
+                {ok, Sock} ->
+                    io:format("Connecting to local domain socket:~p~n",
+                              [Display]),
+                    {ok, {local, Sock}};
+                Err ->
+                    io:format("ERROR: gen_tcp connect: ~p~n",[Err]),
+                    {error,noUnixDomainSockets}
+            end;
         _ ->
             io:format("Connecting to unix domain socket:~p~n",[Display]),
             {ok, Sock} = unixdom2:start_link(),
-            Path = lists:flatten(io_lib:format("/tmp/.X11-unix/X~p", 
-                                               [Display])),
             unixdom2:connect(Sock, Path, [{active,true}, binary]),
             {ok, {unix, Sock}}
     end;
@@ -320,6 +329,13 @@ recv({unix, S}) ->
     receive
         {unixdom, S, Data} -> Data
     end;
+recv({local, Fd}) ->
+    receive
+        {tcp,Fd,Data} ->
+            io:format("Received ~w bytes from server~n~p~n",
+                      [what_size(Data), Data]),
+            Data
+    end;
 recv({tcp, Fd}) ->
     receive
         {tcp,Fd,Data} ->
@@ -328,10 +344,18 @@ recv({tcp, Fd}) ->
             Data
     end.
 
+what_size(L) when is_list(L)   -> length(L);
+what_size(B) when is_binary(B) -> size(B).
 
 
 send({unix, S}, Bin) ->
     unixdom2:send(S, Bin),
+    true;
+send({local, Fd}, Bin) ->
+    io:format("Sending ~w bytes to server~n~p~n",
+              [size(Bin), Bin]),
+    gen_tcp:send(Fd, Bin),
+    %sleep(1500).
     true;
 send({tcp, Fd}, Bin) ->
     %% io:format("[~w] Sending ~w bytes to server~n~p~n",
