@@ -15,8 +15,8 @@
 analyse(X) ->
     ex11_lib_keyboard_driver ! {self(), X},
     receive
-	{ex11_lib_keyboard_driver, Val} ->
-	    Val
+        {ex11_lib_keyboard_driver, Val} ->
+            Val
     end.
 
 ensure_started(Display) ->
@@ -24,45 +24,45 @@ ensure_started(Display) ->
 
 ensure_started1(Display) ->
     case whereis(ex11_lib_keyboard_driver) of
-	undefined ->
-	    register(ex11_lib_keyboard_driver, 
-		     spawn(fun() -> init(Display) end));
-	Pid ->
-	    true
+        undefined ->
+            register(ex11_lib_keyboard_driver,
+                     spawn(fun() -> init(Display) end));
+        _Pid ->
+            true
     end.
 
 init(Display) ->
     %% Ask the display for the Min and Max keycodes
-    {First,Last} = K = ex11_lib:get_display(Display, keycodes),
+    {First,Last} = _K = ex11_lib:get_display(Display, keycodes),
     io:format("Min,max keycodes=~p,~p~n",[First,Last]),
     %% gte the keycodes
     {ok, {keys, Keys}} = xDo(Display, eGetKeyboardMapping(First,Last)),
-    Table = map(fun({I,Ks}) ->
-			Ks1 = map(fun key/1, Ks),
-			list_to_tuple(Ks1)
-	    end, Keys),
+    Table = map(fun({_I,Ks}) ->
+                        Ks1 = map(fun key/1, Ks),
+                        list_to_tuple(Ks1)
+                end, Keys),
     loop(list_to_tuple(Table), First, Last).
 
 loop(Table, First, Last) ->
     receive
-	{From, {Key, State}} when Key >= First, Key =< Last ->
-	    Index = Key - First + 1,
-	    S = element(Index, Table),
-	    {Type, Element} = classify(State),
-	    Val = if
-		      Element > size(S) ->
-			  internalError;
-		      true ->
-			  element(Element, S)
-		  end,
-	    From ! {ex11_lib_keyboard_driver, {State,Key,Type,Val}},
-	    loop(Table, First, Last);
-	{From, {Key,State}} ->
-	    From ! {ex11_lib_keyboard_driver, {State,Key,error,error}},
-	    loop(Table, First, Last);
-	Other ->
-	    io:format("ex11_lib_keyboard_driver internal error:~p~n",[Other]),
-	    loop(Table, First, Last)
+        {From, {Key, State}} when Key >= First, Key =< Last ->
+            Index = Key - First + 1,
+            S = element(Index, Table),
+            {Type, Element} = classify(State),
+            Val = if
+                      Element > size(S) ->
+                          internalError;
+                      true ->
+                          element(Element, S)
+                  end,
+            From ! {ex11_lib_keyboard_driver, {State,Key,Type,Val}},
+            loop(Table, First, Last);
+        {From, {Key,State}} ->
+            From ! {ex11_lib_keyboard_driver, {State,Key,error,error}},
+            loop(Table, First, Last);
+        Other ->
+            io:format("ex11_lib_keyboard_driver internal error:~p~n",[Other]),
+            loop(Table, First, Last)
     end.
 
 
@@ -84,7 +84,7 @@ prt(I) ->
 %% is_alt_gr(32) -> true;
 %% is_alt_gr(128)  -> true;
 %% is_alt_gr(_) -> false.
-    
+
 is_shift(X) -> (X band 1) == 1.
 
 is_ctrl(X) -> (X band 4) == 4.
@@ -109,6 +109,9 @@ classify(false, false, true)  -> {shift, 2};
 classify(false, false, false) -> {none, 1}.
 
 key(I) when I =< 255 -> {char, I};
+
+key(I) when I > 16#10080000 ->
+    key(I-16#10080000);
 
 key(16#aa1) -> {cmd, k_emspace};
 key(16#aa2) -> {cmd, k_enspace};
@@ -316,27 +319,27 @@ key(16#FF52) -> {cmd, up};
 key(16#FF53) -> {cmd, right};
 key(16#FF54) -> {cmd, down};
 key(16#FF55) -> {cmd, prior};
-key(16#FF55) -> {cmd, pageUp};
+%key(16#FF55) -> {cmd, pageUp};
 key(16#FF56) -> {cmd, next};
-key(16#FF56) -> {cmd, pageDown};
+%key(16#FF56) -> {cmd, pageDown};
 key(16#FF57) -> {cmd, 'end'};
 key(16#FF58) -> {cmd, 'begin'};
 
 key(16#FF60) -> {cmd, select};
-key(16#FF61) -> {cmd, print};  
+key(16#FF61) -> {cmd, print};
 key(16#FF62) -> {cmd, execute};
 key(16#FF63) -> {cmd, insert};
-key(16#FF65) -> {cmd, undo};  
-key(16#FF66) -> {cmd, redo}; 
+key(16#FF65) -> {cmd, undo};
+key(16#FF66) -> {cmd, redo};
 key(16#FF67) -> {cmd,  menu};
 key(16#FF68) -> {cmd,  find};
 key(16#FF69) -> {cmd,  cancel};
 key(16#FF6A) -> {cmd,  help};
 key(16#FF6B) -> {cmd,  break};
 
-key(16#FF7E) -> {cmd, modeSwitch};
-key(16#FF7E) -> {cmd, scriptSwitch};
-key(16#FF7F) -> {cmd, numLock}; 	
+%key(16#FF7E) -> {cmd, modeSwitch};
+%key(16#FF7E) -> {cmd, scriptSwitch};
+key(16#FF7F) -> {cmd, numLock};
 
 key(16#FF80) -> {keypad,space};
 key(16#FF89) -> {keypad,tab};
@@ -351,9 +354,9 @@ key(16#FF97) -> {keypad,up};
 key(16#FF98) -> {keypad,right};
 key(16#FF99) -> {keypad,down};
 key(16#FF9A) -> {keypad,prior};
-key(16#FF9A) -> {keypad,pageUp};
+%key(16#FF9A) -> {keypad,pageUp};
 key(16#FF9B) -> {keypad,next};
-key(16#FF9B) -> {keypad,pageDown};
+%key(16#FF9B) -> {keypad,pageDown};
 key(16#FF9C) -> {keypad,'end'};
 key(16#FF9D) -> {keypad,'begin'};
 key(16#FF9E) -> {keypad,insert};
@@ -431,8 +434,3 @@ key(16#FFEE) -> {cmd, hyper_R};
 key(X) ->
     io:format("Unknown Key=~s~n",[prt(X)]),
     {unknown, X}.
-
-		
-
-				   
-	    

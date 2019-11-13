@@ -57,7 +57,9 @@ init(Parent, X, Y, Width, Ht, Border, Color) ->
     PWin = rpc(Parent, mountPoint),
     Wargs = #win{x=X, y=Y, parent=PWin,
                  border=Border,width=Width,ht=Ht,color=Color,
-                 type=label, mask = ?EVENT_EXPOSURE bor ?EVENT_BUTTON_PRESS},
+                 type=label,
+                 mask = ?EVENT_EXPOSURE bor ?EVENT_BUTTON_PRESS
+                     bor ?EVENT_KEY_PRESS},
     Wargs1 = sw:mkWindow(Display, Parent, Wargs),
     Win = Wargs1#win.win,
     %% Make a pixmap

@@ -34,6 +34,7 @@
 new_board() ->
     adjust_board_size(#board{}).
 
+%% Adjust the board size to fit the cells.
 adjust_board_size(#board{width  = W,
                          height = H,
                          cell   = #cell{type = square,
@@ -56,14 +57,18 @@ win() ->
     Display = xStart("3.2"),
     Win     = swTopLevel:make(Display, B#board.width, B#board.height, ?bg),
     Canvas  = swCanvas:make(Win,0,0,B#board.width,B#board.height,1,?gray88),
-    Self = self(),
+    Self    = self(),
+
     Canvas ! {onClick, fun({_,X,Y,_,_}) ->
                                Self ! {click, X, Y}
                        end},
 
-    draw_board(Canvas, B),
+    Canvas ! {onKey, fun(X) ->
+                             Cmd = ex11_lib_keyboard_driver:analyse(X),
+                             Self ! {key, Cmd}
+                     end},
 
-    %%draw_pump(Canvas, B, _Row = 3, _Col = 5),
+    draw_board(Canvas, B),
 
     loop(Canvas, B).
 
