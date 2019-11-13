@@ -14,123 +14,114 @@
 -define(Vsn, "3.1").
 
 -export([colors/0,
-	 mkArc/6,
-	 mkPoint/2,
-	 mkRectangle/4,
-	 eAllocColor/4,
-	 eAllocNamedColor/2,
-	 eChangeGC/2,
-	 eClearArea/6, 
-	 eConfigureWindow/2,
-	 eConnect/1,
-	 eCopyArea/9,
-	 eCreateGC/3,
-	 eCreateGlyphCursor/11,
-	 eCreatePixmap/5,
-	 eCreateWindow/11,
-	 eDestroyWindow/1,
-	 eFillPoly/5,
-	 eFreeGC/1,
-	 eFreePixmap/1,
-	 eGetKeyboardMapping/2,
-	 eImageText8/5,
-	 eListFonts/2,
-	 eMapWindow/1,
-	 eOpenFont/2,
-	 eParseEvent/2,
-	 ePolyArc/3,
-	 ePolyFillArc/3,
-	 ePolyFillRectangle/3,
-	 ePolyRectangle/3,
-	 ePolyLine/4,
-	 ePolyText8/5,
-	 ePutImage/9,
-	 eSetCloseDownMode/1,
-	 eSetInputFocus/3,
-	 eUnmapWindow/1,
-	 xSetInputFocus/1,
-	 pConnect/2,
-	 pError/1,
-	 pEvent/1,
-	 pReply/2,
-	 sleep/1,
-	 xEnsureFont/2,
-	 xEnsureNamedGC/3,
-	 xClearArea/1,
-	 xColor/2,
-	 xCreateNamedGC/3,
-	 xCreateNamedGC/4,
-	 xCreateGC/2,
-	 xCreateGC/3,
-	 xCreateCursor/2,
-	 xCreatePixmap/4,
-	 xCreateSimpleWindow/7,
-	 xCreateSimpleWindow/10,
-	 xCreateWindow/10,
-	 xDestroyGC/2,
-	 xDo/2,
-	 xFlush/1,
-	 xFreePixmap/2,
-	 xGC/2,
-	 xGC/3,
-	 xPen/3,
-	 xPen/4,
-	 xSendMeAllEvents/2,
-	 xStart/1,
-	 cmd/2, 
-	 get_display/2,
-	 get_root_of_screen/2,
-	 new_id/1, 
-	 free_id/2,
-	 rpc/2,
-	 reply/2,
-	 xAddHandler/3,
-	 xQueryFont/2,
-	 xGetVar/2, 
-	 xSetVar/3,
-	 xMkTmpGC/2,
-	 xMkTmpPen/3,
-	 xVar/2
-	]).
+         mkArc/6,
+         mkPoint/2,
+         mkRectangle/4,
+         eAllocColor/4,
+         eAllocNamedColor/2,
+         eChangeGC/2,
+         eClearArea/6, 
+         eConfigureWindow/2,
+         eConnect/1,
+         eCopyArea/9,
+         eCreateGC/3,
+         eCreateGlyphCursor/11,
+         eCreatePixmap/5,
+         eCreateWindow/11,
+         eDestroyWindow/1,
+         eFillPoly/5,
+         eFreeGC/1,
+         eFreePixmap/1,
+         eGetKeyboardMapping/2,
+         eImageText8/5,
+         eListFonts/2,
+         eMapWindow/1,
+         eOpenFont/2,
+         eParseEvent/2,
+         ePolyArc/3,
+         ePolyFillArc/3,
+         ePolyFillRectangle/3,
+         ePolyRectangle/3,
+         ePolyLine/4,
+         ePolyText8/5,
+         ePutImage/9,
+         eSetCloseDownMode/1,
+         eSetInputFocus/3,
+         eUnmapWindow/1,
+         xSetInputFocus/1,
+         pConnect/2,
+         pError/1,
+         pEvent/1,
+         pReply/2,
+         sleep/1,
+         xEnsureFont/2,
+         xEnsureNamedGC/3,
+         xClearArea/1,
+         xColor/2,
+         xCreateNamedGC/3,
+         xCreateNamedGC/4,
+         xCreateGC/2,
+         xCreateGC/3,
+         xCreateCursor/2,
+         xCreatePixmap/4,
+         xCreateSimpleWindow/7,
+         xCreateSimpleWindow/10,
+         xCreateWindow/10,
+         xDestroyGC/2,
+         xDo/2,
+         xFlush/1,
+         xFreePixmap/2,
+         xGC/2,
+         xGC/3,
+         xPen/3,
+         xPen/4,
+         xSendMeAllEvents/2,
+         xStart/1,
+         cmd/2, 
+         get_display/2,
+         get_root_of_screen/2,
+         new_id/1, 
+         free_id/2,
+         rpc/2,
+         reply/2,
+         xAddHandler/3,
+         xQueryFont/2,
+         xQueryPointer/2,
+         xGetVar/2, 
+         xSetVar/3,
+         xMkTmpGC/2,
+         xMkTmpPen/3,
+         xVar/2
+        ]).
 
-
-%% these are the widgets
-
+                                                % these are the widgets
 -import(lists, [reverse/1, reverse/2]).
-
 -import(ex11_lib_utils, [i2h/1]).
-
 -import(lists, [map/2, member/2]).
-
 -define(INT16, 16/big-signed-integer).
-
 %% commands
-
 -include("ex11_lib.hrl").
-
 colors() -> ex11_lib_rgb:colors().
-
 xStart(Vsn) ->
     case Vsn > ?Vsn of
-	true ->
-	    io:format("*** Warning ex11 library version=~p~n"
-		      " required version=~p~n", [?Vsn, Vsn]);
-	false ->
-	    void
+        true ->
+            io:format("*** Warning ex11 library version=~p~n"
+                      " required version=~p~n", [?Vsn, Vsn]);
+        false ->
+            void
     end,
     case ex11_lib_control:start() of
-	{ok, Pid, Screen} ->
-	    put(ex11Pid, Pid),
-	    init(Pid, Screen),
-	    {ok, Pid};
-	Error ->
-	    Error
+        {ok, Pid, Screen} ->
+            put(ex11Pid, Pid),
+            init(Pid, Screen),
+            {ok, Pid};
+        Error ->
+            Error
     end.
 
 new_id(Pid) -> rpc(Pid, create_id).
 
 add_gc_to_win(Pid, X) -> Pid ! {addGCtoWin, X}.
-    
 
 cmd(Pid, {cast, X}) -> Pid ! {sendCmd, X};
 cmd(Pid, C)         -> rpc(Pid, {cmd, C}).
@@ -140,11 +131,11 @@ free_id(Pid, Id) -> rpc(Pid, {free_id, Id}).
 get_display(Pid, Key) -> rpc(Pid, {get_display, Key}).
 
 color(Pid, C) -> rpc(Pid, {color, C}).
-    
+
 %% xGetVar(Key) -> {ok, Val} | error
 
 xGetVar(Pid, Key) -> rpc(Pid, {xGetVar, Key}).
-    
+
 xSetVar(Pid, Key, Val) -> rpc(Pid, {xSetVar, Key, Val}).
 
 xColor(Pid, C) -> color(Pid, C).
@@ -158,9 +149,9 @@ xFlush(Pid) -> cast(Pid, flush).
 rpc(Pid, Q) ->
     Pid ! {self(), Q},
     receive
-	{Pid, Reply} ->
-	    %% io:format("Reply=~p~n",[Reply]),
-	    Reply
+        {Pid, Reply} ->
+            %% io:format("Reply=~p~n",[Reply]),
+            Reply
     end.
 
 reply(Pid, R) ->
@@ -169,80 +160,80 @@ reply(Pid, R) ->
 cast(Pid, Q) ->
     Pid ! Q.
 
-init(Pid, Screen) ->
+init(Pid, _Screen) ->
     %% Screen is the screen we were started with
     %% But I'll ignore this ...
     %% Do all initialisation here
     %% first we create a sub-window which is unmapped
     %% this is parent all GC's
-    Win = xVar(Pid, defaultWindow),
+    _Win = xVar(Pid, defaultWindow),
     xPen(Pid, "black",1,?black),
     xPen(Pid, "white",1,?white),
     Font   = xEnsureFont(Pid, "9x15"),
     xCreateNamedGC(Pid, "text", [{function, copy},
-				 {font, Font},
-				 {fill_style, solid},
-				 {foreground, xColor(Pid, ?DarkBlue)}]),
+                                 {font, Font},
+                                 {fill_style, solid},
+                                 {foreground, xColor(Pid, ?DarkBlue)}]),
     %% the dummy GC
-    GC =  xCreateNamedGC(Pid, dummyGC, [{function,copy},
-					{line_width,1},
-					{line_style,solid},
-					{foreground, xColor(Pid, ?black)}]),
+    _GC =  xCreateNamedGC(Pid, dummyGC, [{function,copy},
+                                         {line_width,1},
+                                         {line_style,solid},
+                                         {foreground, xColor(Pid, ?black)}]),
     true.
 
-xCreateCursor(Display, CursorId) ->    
+xCreateCursor(Display, CursorId) ->
     case xGetVar(Display, {cursor,CursorId}) of
-	{ok, Val} ->
-	    Val;
-	error ->
-	    CursorFont = xEnsureFont(Display, "cursor"),
-	    Id = new_id(Display),
-	    cmd(Display, eCreateGlyphCursor(Id, 
-					    CursorFont, CursorFont,
-					    CursorId,
-					    CursorId,
-					    0,0,0,
-					    255,255,255)),
-	    xSetVar(Display, {cursor,CursorId}, Id),
-	    Id
+        {ok, Val} ->
+            Val;
+        error ->
+            CursorFont = xEnsureFont(Display, "cursor"),
+            Id = new_id(Display),
+            cmd(Display, eCreateGlyphCursor(Id,
+                                            CursorFont, CursorFont,
+                                            CursorId,
+                                            CursorId,
+                                            0,0,0,
+                                            255,255,255)),
+            xSetVar(Display, {cursor,CursorId}, Id),
+            Id
     end.
 
 xClearArea(Area) ->
     eClearArea(false,Area,0,0,0,0).
 
 xCreateSimpleWindow(Display, X, Y, Width, Ht, Cursor, Bg) ->
-    xCreateWindow(Display,top, X, Y, Width, Ht, 1, 0, 0, 
-		  [{backgroundPixel, Bg},
-		   {eventMask, 
-		    ?EVENT_EXPOSURE bor 
-		    ?EVENT_STRUCTURE_NOTIFY bor 
-		    ?EVENT_BUTTON_PRESS bor 
-		    ?EVENT_BUTTON1_MOTION},
-		   {backgroundPixmap, 0}, 
-		   {cursor, xCreateCursor(Display,Cursor)},
-		   {borderPixmap,0}]).
+    xCreateWindow(Display,top, X, Y, Width, Ht, 1, 0, 0,
+                  [{backgroundPixel, Bg},
+                   {eventMask,
+                    ?EVENT_EXPOSURE bor
+                        ?EVENT_STRUCTURE_NOTIFY bor
+                        ?EVENT_BUTTON_PRESS bor
+                        ?EVENT_BUTTON1_MOTION},
+                   {backgroundPixmap, 0},
+                   {cursor, xCreateCursor(Display,Cursor)},
+                   {borderPixmap,0}]).
 
 %% Note color is set differently
 
-xCreateSimpleWindow(Display, 
-		    Parent, X, Y, Width, Ht, BorderWidth, Cursor, Col, Mask) ->
+xCreateSimpleWindow(Display,
+                    Parent, X, Y, Width, Ht, BorderWidth, Cursor, Col, Mask) ->
     Opts = [{eventMask, Mask},
-	    {cursor,  xCreateCursor(Display, Cursor)},
-	    {backgroundPixel, Col}],
+            {cursor,  xCreateCursor(Display, Cursor)},
+            {backgroundPixel, Col}],
     xCreateWindow(Display, Parent, X, Y, Width, Ht, BorderWidth, 0, 0,
-		  Opts).
+                  Opts).
 
 xCreateWindow(Display, Parent, X, Y, Width, Ht, BorderWidth, Class, Visual,
-	      Opts) ->  
+              Opts) ->
     ParentWin = case Parent of
-		    top -> xVar(Display, defaultWindow);
-		    _   -> Parent
-		end,
+                    top -> xVar(Display, defaultWindow);
+                    _   -> Parent
+                end,
     Depth = xVar(Display, {depth, ParentWin}),
     WindowId = new_id(Display),
     Display ! {newWindow,self(),WindowId,ParentWin,Depth},
     Cmd = eCreateWindow(Depth, WindowId, ParentWin, X, Y, Width, Ht,
-			BorderWidth, Class, Visual, Opts),
+                        BorderWidth, Class, Visual, Opts),
     cmd(Display, Cmd),
     WindowId.
 
@@ -257,18 +248,17 @@ xCreatePixmap(Display, Drawable, Width, Ht) ->
     Id.
 
 xEnsureFont(Display, FontNameStr) ->
-    case xGetVar(Display, {font,FontNameStr}) of
-	{ok, Id} -> 
-	    Id;
-	error ->
-	    Id = new_id(Display),
-	    %% io:format("xEnsureFont creating a new font: Id=~p font=~p~n",
-	    %% [Id, FontNameStr]),
-	    cmd(Display, eOpenFont(Id, FontNameStr)),
-	    xSetVar(Display, {font,FontNameStr}, Id),
-	    Id
+   case xGetVar(Display, {font,FontNameStr}) of
+        {ok, Id} ->
+            Id;
+        error ->
+            Id = new_id(Display),
+            %% io:format("xEnsureFont creating a new font: Id=~p font=~p~n",
+            %% [Id, FontNameStr]),
+            cmd(Display, eOpenFont(Id, FontNameStr)),
+            xSetVar(Display, {font,FontNameStr}, Id),
+            Id
     end.
-
 %% GC's
 %% Named GC's
 %%   Creating:
@@ -285,7 +275,7 @@ xEnsureFont(Display, FontNameStr) ->
 %%     eChangeGC(Gc, Opts) -> void
 %%   Destroying
 %%     xDestroyGC(Display, Id)
- 
+
 xCreateNamedGC(Display, Name, Opts) ->
     Win    = xVar(Display, defaultWindow),
     Id     = new_id(Display),
@@ -721,13 +711,22 @@ eQueryFont(Id) ->
     call(47, <<Id:32>>, eQueryFont).
 
 
+
+xQueryPointer(Display, Win) ->
+    Cmd = eQueryPointer(Win),
+    {ok, _Val} = xDo(Display, Cmd).
+
+eQueryPointer(Window) ->
+    call(38, <<Window:32>>, eQueryPointer).
+
+
 xSetInputFocus(Window) ->
     eSetInputFocus(none, Window, 0).
 
 
 
 %%----------------------------------------------------------------------
-%% requests are *allways* a multiple of 4 bytes
+%% requests are *always* a multiple of 4 bytes
 %% the first 4 bytes are [Op,Mod,N1,N2]
 %% Len = N1*256 ? N2
 %% The Len = length of command in 4 byte units
@@ -1045,12 +1044,12 @@ encode([], [], V, _, Bin) ->
     R = reverse(Bin),
     %% io:format("V=~p bin=~p~n",[V, R]),
     {V, list_to_binary(R)};
-encode([], L, V, _, Bin) ->
+encode([], L, _V, _, _Bin) ->
     exit({badOptionIn,eCreateWindow,L}).
 
 contains(Key,[{Key,Val}|L1], L2) -> {yes, Val, reverse(L2, L1)};
 contains(Key,[H|L1], L2)         -> contains(Key, L1, [H|L2]);
-contains(Key, [], _)             -> no.
+contains(_Key, [], _)            -> no.
 
 %%----------------------------------------------------------------------
 
@@ -1077,57 +1076,92 @@ pReply1(eGetAtomName, <<_:64,Need:16,_:22/binary,S1/binary>>) ->
 	_ ->
 	    binary_to_list(S1)
     end;
-pReply1({eGetKeyboardMapping,First}, <<_:8,KeySymsPerKeycode:8,_:16,ReplyLen:32,_:192,
-			      Stuff/binary>>) ->
+pReply1({eGetKeyboardMapping,First},
+        <<_:8,KeySymsPerKeycode:8,_:16,_ReplyLen:32,_:192,
+          Stuff/binary>>) ->
     Is = pKeySymbs(Stuff),
     io:format("KeySymsPerKeycode=~p~n",[KeySymsPerKeycode]),
     Parse = gather_keysyms(Is, First, KeySymsPerKeycode, []),
     {keys, Parse};
-pReply1(eListFonts, <<_:48,NumberOfFonts:16,_:176, B/binary>> = B1) ->
+pReply1(eListFonts, <<_:48,_NumberOfFonts:16,_:176, B/binary>>) ->
     %% 176 = 22 bytes of unused stuff ...
     %% io:format("Nfonts=~p~n", [NumberOfFonts]),
     %% Note Number of fonts usually is wrong so I don't retain it
-    Fonts = pFontList(B, []);
+    _Fonts = pFontList(B, []);
 pReply1(eQueryFont, <<_:64,
-		     MinBounds:12/binary,       % note the units of binary
-						% are inbytes
-		     _:32,
-		     MaxBounds:12/binary,
-		     _:32,
-		     MinByte2:16,
-		     MaxByte2:16,
-		     DefaultChar:16,
-		     NFontProps:16,
-		     DrawDirection:8,
-		     MinByte1:8,
-		     MaxByte1:8,
-		     AllCharsExist:8,
-		     FontAscent:?INT16, 
-		     FontDescent:?INT16,
-		     NCharInfos:32,
-		     Rest/binary>>) ->
+                      MinBounds:12/binary,   % note the units of binary
+                                             % are inbytes
+                      _:32,
+                      MaxBounds:12/binary,
+                      _:32,
+                      MinByte2:16,
+                      MaxByte2:16,
+                      DefaultChar:16,
+                      NFontProps:16,
+                      DrawDirection:8,
+                      MinByte1:8,
+                      MaxByte1:8,
+                      AllCharsExist:8,
+                      FontAscent:?INT16,
+                      FontDescent:?INT16,
+                      NCharInfos:32,
+                      Rest/binary>>) ->
     %% io:format("Here size(Rest)=~p~n",[size(Rest)]),
     Cmin = pCharInfo(MinBounds),
     Cmax = pCharInfo(MaxBounds),
     {FontProps, T} = pFontProps(NFontProps, Rest, []),
     {CharInfos, _} = pCharInfos(NCharInfos, T, []),
-    NumberOfChars = MaxByte1 - MinByte1 + 1,
-    Found = length(CharInfos),
+    _NumberOfChars = MaxByte1 - MinByte1 + 1,
+    _Found = length(CharInfos),
     %% io:format("N Chars = ~p (~p..~p) found ~p descriptions~n",
     %% [NumberOfChars, MinByte1, MaxByte1, Found]),
     %% io:format("MinByte2=~p MaxByte2=~p~n",[MinByte2, MaxByte2]),
     #fontInfo{min_bounds=Cmin, max_bounds=Cmax,
-	      min_byte2=MinByte2, max_byte2=MaxByte2,
-	      default_char=DefaultChar, draw_direction=DrawDirection,
-	      min_byte1=MinByte1,max_byte1=MaxByte1,
-	      all_chars_exist=AllCharsExist,font_ascent=FontAscent,
-	      font_descent=FontDescent,
-	      font_props=FontProps,
-	      char_infos=CharInfos}.
+              min_byte2=MinByte2, max_byte2=MaxByte2,
+              default_char=DefaultChar, draw_direction=DrawDirection,
+              min_byte1=MinByte1,max_byte1=MaxByte1,
+              all_chars_exist=AllCharsExist,font_ascent=FontAscent,
+              font_descent=FontDescent,
+              font_props=FontProps,
+              char_infos=CharInfos};
+%%
+%% The root window the pointer is logically on and the pointer
+%% coordinates relative to the root's origin are returned.
+%% If same-screen is False, then the pointer is not on the same
+%% screen as the argument window, child is None, and win-x and
+%% win-y are zero. If same-screen is True, then win-x and win-y
+%% are the pointer coordinates relative to the argument window's
+%% origin, and child is the child containing the pointer, if any.
+%% The current logical state of the modifier keys and the buttons
+%% are also returned. Note that the logical state of a device
+%% (as seen by means of the protocol) may lag the physical state
+%% if device event processing is frozen.
+pReply1(eQueryPointer, <<_:8,
+                      SameScreen:8,
+                      _SequenceNumber:16,
+                      _ReplyLen:32,
+                      RootWindow:32,
+                      ChildWindow:32,
+                      RootX:16,
+                      RootY:16,
+                      WinX:16,
+                      WinY:16,
+                      Mask:16,
+                      _:48>>) ->
+
+    #pointerInfo{same_screen = SameScreen,
+                 root_win    = RootWindow,
+                 child_win   = ChildWindow,
+                 root_x      = RootX,
+                 root_y      = RootY,
+                 win_x       = WinX,
+                 win_y       = WinY,
+                 mask        = Mask}.
+
 
 pKeySymbs(<<>>) -> [];
 pKeySymbs(<<I:32,Rest/binary>>) -> [I|pKeySymbs(Rest)].
-    
+
 gather_keysyms([], _, _, L) ->
     reverse(L);
 gather_keysyms(Is, First, N, L) ->
@@ -1136,7 +1170,7 @@ gather_keysyms(Is, First, N, L) ->
 
 take(0, T, L)     -> {reverse(L), T};
 take(N, [H|T], L) -> take(N-1, T, [H|L]);
-take(N, [], L)    -> {reverse(L), []}.
+take(_N, [], L)   -> {reverse(L), []}.
 
 pFontProps(0, B, L) -> 
     {reverse(L), B};
@@ -1164,7 +1198,7 @@ pCharInfo(B) ->
 %% be that the documentation just doesn't work
 %% also the number of matching fonts seems wrong
 
-pFontList(<<N:16,B/binary>>, L) ->
+pFontList(<<_N:16,B/binary>>, _L) ->
     get_str(B, []).
 
 get_str(<<>>, L) ->
@@ -1200,7 +1234,7 @@ eParseEvent(keyPress, <<2:8,KeyCode:8,_:80,Win:32,_:96,State:16,_/binary>>) ->
     %% collating sequence ...
     {Win, {KeyCode,State}};
 eParseEvent(buttonPress,<<4:8,Button:8,
-	    _Seq:16,Time:32,_:32,Event:32,_:32,
+	    _Seq:16,_Time:32,_:32,Event:32,_:32,
 	    RootX:?INT16,RootY:?INT16,
 	    EventX:?INT16,EventY:?INT16,_/binary>>) ->
     %% pg 71

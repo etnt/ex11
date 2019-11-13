@@ -88,11 +88,12 @@ init(Parent, X, Y, Width, Ht, Border, Color) ->
         end,
     F(),
     BPress = fun(_) -> void end,
+    KPress = fun(_) -> void end,
     loop(Display,Pen0,GC,Wargs1,Win,Canvas,dict:new(),
-         {[],[]},1,F,BPress,Clear).
+         {[],[]},1,F,BPress,KPress,Clear).
 
 
-loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear) ->
+loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress,Clear) ->
     receive
         {resize, W, H} ->
             %% io:format("resize~n"),
@@ -115,23 +116,29 @@ loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear) ->
                  end,
             self() ! {event, [], expose,[]},
             Wargs1 = sw:generic({setWidthHt,W,H}, Display, Wargs),
-            loop(Display,Pen0,GC,Wargs1,Win,Canvas1,Pens,L,Free,F1,BPress,
+            loop(Display,Pen0,GC,Wargs1,Win,Canvas1,Pens,L,Free,F1,BPress,KPress,
                  Clear1);
         erase ->
             Clear(),
             F(),
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,{[],[]},1,F,BPress,
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,{[],[]},1,F,BPress,KPress,
                  Clear);
         {event,_,expose, _} ->
             F(),
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear);
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress,Clear);
         {event,_,buttonPress,Args} ->
             BPress(Args),
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear);
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress,Clear);
+        {event,_, keyPress, Args} ->
+            KPress(Args),
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress,Clear);
+
         {'EXIT', _Pid, _Why} ->
             true;
         {onClick, Fun1} ->
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,Fun1,Clear);
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,Fun1,KPress,Clear);
+        {onKey, Fun1} ->
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Fun1,Clear);
         {newPen, Name, Color, Width} ->
             GC1 = xCreateGC(Display, Win,
                             [{function,copy},
@@ -139,7 +146,7 @@ loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear) ->
                              {line_style,solid},
                              {foreground, xColor(Display, Color)}]),
             Pens1 = dict:store(Name, GC1, Pens),
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens1,L,Free,F,BPress,Clear);
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens1,L,Free,F,BPress,KPress,Clear);
         {From, {draw, Pen, Obj}} ->
             case dict:find(Pen, Pens) of
                 {ok, PenGC} ->
@@ -153,7 +160,7 @@ loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear) ->
                             {L1,L2} = L,
                             Ln = {L1, [{Free,Bin}|L2]},
                             loop(Display,Pen0,GC, Wargs, Win, Canvas, Pens, Ln, 
-                                 Free+1, F, BPress, Clear)
+                                 Free+1, F, BPress,KPress, Clear)
                     end;
                 error ->
                     io:format("Invalid pen:~p~n",[Pen]),
@@ -168,11 +175,17 @@ loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,Clear) ->
             foreach(fun({_,Bin}) -> xDo(Display, Bin) end, L2a),
             F(),
             reply(From, ack),
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L3,Free,F,BPress,Clear);
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L3,Free,F,BPress,KPress,Clear);
+
+        {From, get_win} ->
+            From ! {self(), Win},
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress, Clear);
+
         Any ->
+            io:format("~p: Any = ~p~n",[?MODULE,Any]),
             %% Now we call the generic operators
             _Wargs1 = sw:generic(Any, Display, Wargs),
-            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress, Clear)
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress, Clear)
     end.
 
 delete_obj(I, [{I,_}|T]) -> T;

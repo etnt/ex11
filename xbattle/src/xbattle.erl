@@ -15,7 +15,8 @@
 
 
 -include("xbattle.hrl").
--include("sw.hrl").
+-include("ex11_lib.hrl").
+
 
 -define(bg, 16#ffffcc).
 
@@ -63,16 +64,25 @@ win() ->
                                Self ! {click, X, Y}
                        end},
 
+    CanvasWin = get_canvas_win(Canvas),
     Canvas ! {onKey, fun(X) ->
-                             Cmd = ex11_lib_keyboard_driver:analyse(X),
-                             Self ! {key, Cmd}
+                             {ok,P} = ex11_lib:xQueryPointer(Display,CanvasWin),
+                             Kx     = P#pointerInfo.win_x,
+                             Ky     = P#pointerInfo.win_y,
+                             Cmd    = ex11_lib_keyboard_driver:analyse(X),
+                             Self ! {key, Cmd, {Kx,Ky}}
                      end},
 
     draw_board(Canvas, B),
 
     loop(Canvas, B).
 
-
+get_canvas_win(Canvas) ->
+    Canvas ! {self(), get_win},
+    receive
+        {Canvas, Win} -> Win
+    end.
+            
 
 
 animate_pump(Canvas, B, Row, Col) ->
@@ -82,7 +92,6 @@ animate_pump(Canvas, B, Row, Col) ->
 
     for(Step, Radius-2, Step,
         fun(I) ->
-                ?dbg("draw_pump: Radius = ~p~n",[I]),
                 draw_pump(Canvas, Xorigo, Yorigo, I),
                 timer:sleep(1000)
         end).
@@ -159,6 +168,10 @@ loop(Canvas, B) ->
             spawn(fun() ->
                           animate_pump(Canvas, B, Row, Col)
                   end),
+            loop(Canvas, B);
+
+        {key, {_State,_Key,_Type,Val}, Pos} ->
+            ?dbg("Got key: ~p at pos: ~p~n", [Val,Pos]),
             loop(Canvas, B);
 
         Any ->
