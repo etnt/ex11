@@ -151,6 +151,9 @@ dispatch(Client, <<1:8,_:8,Seq:16,_/binary>> = B) ->
 send({unix, S}, Bin) ->
     unixdom2:send(S, Bin),
     true;
+send({local, Fd}, Bin) ->
+    gen_tcp:send(Fd, Bin),
+    true;
 send({tcp, Fd}, Bin) ->
     %% io:format("[~w] Sending ~w bytes to server~n~p~n",
     %% [Seq, size(Bin), Bin]),
