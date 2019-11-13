@@ -68,10 +68,22 @@ win() ->
     loop(Canvas, B).
 
 
-draw_pump(Canvas, B, Row, Col) ->
+
+
+animate_pump(Canvas, B, Row, Col) ->
     {Xorigo, Yorigo, Radius} = get_pump_pos(B, Row, Col),
 
-    draw(Canvas, blue, {filledCircle, Xorigo, Yorigo, Radius-2}).
+    Step = (Radius - 2) div 3,
+
+    for(Step, Radius-2, Step,
+        fun(I) ->
+                ?dbg("draw_pump: Radius = ~p~n",[I]),
+                draw_pump(Canvas, Xorigo, Yorigo, I),
+                timer:sleep(1000)
+        end).
+
+draw_pump(Canvas, X, Y, Radius) ->
+    draw(Canvas, blue, {filledCircle, X, Y, Radius}).
 
 
 get_pump_pos(#board{cell = #cell{type = square, size = Size}},
@@ -139,7 +151,9 @@ loop(Canvas, B) ->
             {Row, Col} = Point = is_inside_cell(B, Wx, Wy),
             ?dbg("Clicked at: (~p,~p) is inside cell: ~p~n",
                  [Wx, Wy, Point]),
-            draw_pump(Canvas, B, Row, Col),
+            spawn(fun() ->
+                          animate_pump(Canvas, B, Row, Col)
+                  end),
             loop(Canvas, B);
 
         Any ->
@@ -147,6 +161,7 @@ loop(Canvas, B) ->
             loop(Canvas, B)
 
     end.
+
 
 for(I, Max, _Step, _F) when I >= Max ->
     [];
