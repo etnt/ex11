@@ -63,12 +63,36 @@ win() ->
 
     draw_board(Canvas, B),
 
+    %%draw_pump(Canvas, B, _Row = 3, _Col = 5),
+
     loop(Canvas, B).
+
+
+draw_pump(Canvas, B, Row, Col) ->
+    {Xorigo, Yorigo, Radius} = get_pump_pos(B, Row, Col),
+
+    draw(Canvas, blue, {filledCircle, Xorigo, Yorigo, Radius-2}).
+
+
+get_pump_pos(#board{cell = #cell{type = square, size = Size}},
+             Row, Col) ->
+
+    Radius = Size div 2,
+
+    Xorigo = (Col * Size) + Radius,
+    Yorigo = (Row * Size) + Radius,
+
+    {Xorigo, Yorigo, Radius}.
+
+
 
 
 draw_board(Canvas, #board{width = Width, height = Height, cell = Cell} = _B) ->
     newPen(Canvas, thin, ?black, 1),
+    newPen(Canvas, blue, ?blue, 1),
+
     draw_cells(Canvas, Width, Height, Cell).
+
 
 draw_cells(Canvas, Width, Height, #cell{type = square, size = Size}) ->
 
@@ -112,8 +136,10 @@ loop(Canvas, B) ->
     receive
 
         {click, Wx, Wy} ->
+            {Row, Col} = Point = is_inside_cell(B, Wx, Wy),
             ?dbg("Clicked at: (~p,~p) is inside cell: ~p~n",
-                 [Wx, Wy, is_inside_cell(B, Wx, Wy)]),
+                 [Wx, Wy, Point]),
+            draw_pump(Canvas, B, Row, Col),
             loop(Canvas, B);
 
         Any ->
