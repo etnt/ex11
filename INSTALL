@@ -20,6 +20,10 @@ enabled=true                    # new
 -----------------------------------------------
 
 
+If you run on a Mac you'll need to install XQuartz
+(easy and it works right away)
+
+
 COMPILING
 =========
 
