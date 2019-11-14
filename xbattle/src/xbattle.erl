@@ -64,7 +64,7 @@ win() ->
                                Self ! {click, X, Y}
                        end},
 
-    CanvasWin = get_canvas_win(Canvas),
+    CanvasWin = swCanvas:getWin(Canvas),
     Canvas ! {onKey, fun(X) ->
                              {ok,P} = ex11_lib:xQueryPointer(Display,CanvasWin),
                              Kx     = P#pointerInfo.win_x,
@@ -77,12 +77,6 @@ win() ->
 
     loop(Canvas, B).
 
-get_canvas_win(Canvas) ->
-    Canvas ! {self(), get_win},
-    receive
-        {Canvas, Win} -> Win
-    end.
-            
 
 
 animate_pump(Canvas, B, Row, Col) ->
