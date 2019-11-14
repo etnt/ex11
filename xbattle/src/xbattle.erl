@@ -27,6 +27,14 @@
           origo_y,
           radius,
 
+          %% Keep track of the pump building progress.
+          build     = 0,
+          build_max = 4,
+
+          %% Heart ticks...
+          ticker_pid,
+
+          %% Our neighbors.
           north_pid,
           east_pid,
           south_pid,
@@ -134,6 +142,7 @@ start_cell_processes() ->
 draw_board(Canvas, #board{width = Width, height = Height} = B, Cell) ->
     newPen(Canvas, thin, ?black, 1),
     newPen(Canvas, blue, ?blue, 1),
+    newPen(Canvas, black2, ?black, 2),
 
     draw_cells(Canvas, B, Width, Height, Cell).
 
@@ -211,6 +220,7 @@ cell_init(Controller, Canvas, Board, Cell0, {Row, Col} = Point) ->
     end.
 
 cell_loop(Controller, Canvas, Board, Cell, Point) ->
+    TickerPid = get_ticker_pid(Cell),
     receive
 
         {click, Wx, Wy} ->
@@ -221,9 +231,61 @@ cell_loop(Controller, Canvas, Board, Cell, Point) ->
 
         {key, {_State,_Key,_Type,Val}, {_Wx, _Wy} = Pos} ->
             ?dbg("~p Got key: ~p at pos: ~p~n", [self(),Val,Pos]),
+            NewCell = process_key(Canvas, Board, Cell, Point, Val, Pos),
+            cell_loop(Controller, Canvas, Board, NewCell, Point);
+
+        {TickerPid, tick} ->
+            ?dbg("~p Got a tick!~n",[self()]),
+            cell_loop(Controller, Canvas, Board, Cell, Point);
+
+        _X ->
+            ?dbg("~p EROR Got: ~p~n",[self(),_X]),
             cell_loop(Controller, Canvas, Board, Cell, Point)
 
     end.
+
+get_ticker_pid(#cell_square{ticker_pid = Pid}) -> Pid.
+
+process_key(Canvas, _Board, Cell, _Point, Val, _Pos) ->
+
+    case Val of
+
+        {char,$b} ->
+            C0 = build(Canvas, Cell),
+            maybe_start_ticker(C0);
+
+        _ ->
+            Cell
+    end.
+
+build(Canvas, #cell_square{build     = Build,
+                           build_max = BuildMax,
+                           radius = R,
+                           origo_x = X,
+                           origo_y = Y} = Cell)
+  when Build < BuildMax ->
+
+    %% {arc, X, Y, Radius, Angle1, Angle2}
+    %% The angles are signed integers in degrees scaled by 64,
+    %% with positive indicating counterclockwise motion and negative
+    %% indicating clockwise motion. The start of the arc is specified
+    %% by angle1 relative to the three-o'clock position from the center
+    %% of the rectangle, and the path and extent of the arc is specified
+    %% by angle2 relative to the start of the arc.
+    Msg = {arc, X, Y, R-2, Build*90*64, 90*64},
+    draw(Canvas, black2, Msg),
+
+    Cell#cell_square{build = Build+1};
+%%
+build(_Canvas, Cell) ->
+    Cell.
+
+
+maybe_start_ticker(#cell_square{build = B, build_max = B} = C) ->
+    TickerPid = start_ticker(),
+    C#cell_square{ticker_pid = TickerPid};
+maybe_start_ticker(Cell) ->
+    Cell.
 
 
 animate_pump(Canvas, Cell) ->
@@ -251,3 +313,23 @@ set_pump_pos(#cell_square{size = Size} = Cell, Row, Col) ->
     Cell#cell_square{radius  = Radius,
                      origo_x = (Col * Size) + Radius,
                      origo_y = (Row * Size) + Radius}.
+
+
+
+%%
+%% T I C K E R   P R O C E S S
+%%
+
+start_ticker() ->
+    Self = self(),
+    spawn_link(fun() -> ticker(Self) end).
+
+ticker(Pid) ->
+    receive
+        {Pid, stop} ->
+            exit(normal)
+
+    after 1000 ->
+            Pid ! {self(), tick},
+            ticker(Pid)
+    end.
