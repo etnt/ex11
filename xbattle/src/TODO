@@ -1,0 +1,29 @@
+* How to draw another type of board, e.g with hexagons?
+
+* How to find the closest edge to the mouse click coord?
+
+* How to handle when several sources are pumping into the same cell?
+
+Perhaps use 'bucket' list ADT like:
+
+  [{blue,25%}, {white,50%}, {red,25%}]
+
+If we input a 'quanta' of 25% blue, then the resulting bucket would be:
+
+  [{blue,50%}, {white,37.5%}, {red,12.5%}]
+
+After, yet another 25% blue:
+
+  [{blue,75%}, {white,25%}]
+
+After, yet another 25% blue:
+
+  [{blue,100%}]
+
+After, yet another 25% blue:
+
+  [{blue,100%}]  (nothing changes, the bucket is already full!)
+
+* How should such a cell be represented on the board?
+
+Perhaps a true color mix of the involved colors?
