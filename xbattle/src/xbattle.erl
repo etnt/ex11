@@ -31,8 +31,20 @@
           build     = 0,
           build_max = 4,
 
+          %% Are we a pump station?
+          pump_station = false,
+          pump_color = blue,      % FIXME how to setup what (Pen)color to use?
+
+          %% The cell (fluid) content
+          bucket = [],            % [{Color,Percentage}, ... ]
+          bucket_id,              % canvas Id to be able to remove it
+
           %% Heart ticks...
           ticker_pid,
+
+          %% Have we opened a pipe and if so in what direction?
+          pipe_direction,
+          pipe_id,          % canvas Id to be able to remove it
 
           %% Our neighbors.
           north_pid,
@@ -49,6 +61,7 @@
          }).
 
 -define(xbattle, xbattle).
+
 
 new_board() ->
     ets:new(?xbattle, [set,protected,named_table,{read_concurrency,true}]),
@@ -224,10 +237,13 @@ cell_loop(Controller, Canvas, Board, Cell, Point) ->
     receive
 
         {click, Wx, Wy} ->
-            ?dbg("~p Clicked at: (~p,~p) is inside cell: ~p~n",
-                 [self(), Wx, Wy, Point]),
-            animate_pump(Canvas, Cell),
-            cell_loop(Controller, Canvas, Board, Cell, Point);
+            ?dbg("~p Clicked at: (~p,~p) is inside cell: ~p , Origo(~p)~n",
+                 [self(), Wx, Wy, Point,
+                  {Cell#cell_square.origo_x,Cell#cell_square.origo_y}]),
+            Side = compute_side(Cell, Wx, Wy),
+            ?dbg("~p Side = ~p~n",[self(),Side]),
+            NewCell = draw_pipe(Canvas, Cell, Side),
+            cell_loop(Controller, Canvas, Board, NewCell, Point);
 
         {key, {_State,_Key,_Type,Val}, {_Wx, _Wy} = Pos} ->
             ?dbg("~p Got key: ~p at pos: ~p~n", [self(),Val,Pos]),
@@ -236,13 +252,83 @@ cell_loop(Controller, Canvas, Board, Cell, Point) ->
 
         {TickerPid, tick} ->
             ?dbg("~p Got a tick!~n",[self()]),
-            cell_loop(Controller, Canvas, Board, Cell, Point);
+            NewCell = animate_pump(Canvas, Cell),
+            cell_loop(Controller, Canvas, Board, NewCell, Point);
 
         _X ->
-            ?dbg("~p EROR Got: ~p~n",[self(),_X]),
+            ?dbg("~p EROR Got: ~p , TickerPid=~p~n",[self(),_X,TickerPid]),
             cell_loop(Controller, Canvas, Board, Cell, Point)
 
     end.
+
+%% See: https://en.wikipedia.org/wiki/Atan2
+compute_side(#cell_square{origo_x = Ox,
+                          origo_y = Oy},
+             Wx, Wy) ->
+
+    Radiant = math:atan2((-Wy)-(-Oy),Wx-Ox),
+    Angle   = case erlang:round(Radiant * (180/math:pi())) of
+                  Q when Q < 0 -> 360+Q;
+                  Q            -> Q
+              end,
+
+    case Angle of
+        A when (A<45 andalso A>=0) orelse
+               (A=<360 andalso A>315) -> east;
+        A when A>=45 andalso A<135  -> north;
+        A when A>=135 andalso A<225 -> west;
+        A when A>=225 andalso A<315 -> south
+    end.
+
+%% Force a redraw of a pipe if such exist.
+redraw_pipe(Canvas,
+            #cell_square{pipe_direction = PipeDir} = Cell) 
+    when PipeDir =/= undefined ->
+
+    draw_pipe(Canvas, Cell#cell_square{pipe_direction = undefined}, PipeDir);
+redraw_pipe(_Canvas, _Cell) ->
+    ok.
+
+
+draw_pipe(Canvas,
+          #cell_square{origo_x = Ox,
+                       origo_y = Oy,
+                       radius  = Radius,
+                       pipe_direction = undefined} = Cell,
+          Side) ->
+
+    {X,Y} = case Side of
+                east  -> {Ox+Radius,Oy};
+                north -> {Ox,Oy-Radius};
+                west  -> {Ox-Radius,Oy};
+                south -> {Ox,Oy+Radius}
+            end,
+
+    Id = draw(Canvas, black2, {line, Ox,Oy,X,Y}),
+
+    Cell#cell_square{pipe_direction = Side,
+                     pipe_id        = Id};
+%%
+draw_pipe(Canvas,
+          #cell_square{pipe_direction = PipeDir,
+                       pipe_id        = Id} = Cell,
+          Side)
+  when PipeDir =/= undefined andalso PipeDir =/= Side ->
+
+    maybe_delete_object(Canvas, Id),
+
+    draw_pipe(Canvas,
+              Cell#cell_square{pipe_direction = undefined,
+                               pipe_id        = undefined},
+              Side);
+%%
+draw_pipe(_Canvas,
+          #cell_square{pipe_direction = PipeDir} = Cell,
+          Side)
+  when PipeDir == Side ->
+
+    Cell.
+
 
 get_ticker_pid(#cell_square{ticker_pid = Pid}) -> Pid.
 
@@ -283,28 +369,71 @@ build(_Canvas, Cell) ->
 
 maybe_start_ticker(#cell_square{build = B, build_max = B} = C) ->
     TickerPid = start_ticker(),
-    C#cell_square{ticker_pid = TickerPid};
+    C#cell_square{ticker_pid   = TickerPid,
+                  pump_station = true};
 maybe_start_ticker(Cell) ->
     Cell.
 
 
-animate_pump(Canvas, Cell) ->
-    {Xorigo, Yorigo, Radius} = get_pump_pos(Cell),
+animate_pump(Canvas,
+             #cell_square{origo_x   = X,
+                          origo_y   = Y,
+                          bucket    = Bucket,
+                          bucket_id = BucketId
+                          } = Cell) ->
 
-    Step = (Radius - 2) div 3,
+    {Radius, Color, NewBucket} = pump(Cell),
 
-    for(Step, Radius-2, Step,
-        fun(I) ->
-                draw_pump(Canvas, Xorigo, Yorigo, I),
-                timer:sleep(1000)
-        end).
+    OldAmount = get_amount(Color, Bucket),
+    NewAmount = get_amount(Color, NewBucket),
 
-draw_pump(Canvas, X, Y, Radius) ->
-    draw(Canvas, blue, {filledCircle, X, Y, Radius}).
+    if OldAmount == NewAmount ->
+            Cell;
+       true ->
+            Id = draw(Canvas, Color, {filledCircle, X, Y, Radius}),
+            maybe_delete_object(Canvas, BucketId),
+            redraw_pipe(Canvas, Cell),
+            Cell#cell_square{bucket    = NewBucket,
+                             bucket_id = Id}
+    end.
+
+%% We have hard coded the amount of fluid to
+%% be pumped in quantas of 1/4.
+-define(quanta, 4).
+pump(#cell_square{radius     = Radius,
+                  pump_color = Color,
+                  bucket     = Bucket}) ->
+    NewBucket = bump(Color, Bucket),
+    Amount    = get_amount(Color, NewBucket),
+
+    {(Radius div ?quanta) * Amount, % current amount of cell fluid
+     Color,                         % FIXME a mix of colors if more than one?
+     NewBucket}.
+
+get_amount(Color, Bucket) ->
+    case lists:keyfind(Color, 1, Bucket) of
+        {_,Amount}  -> Amount;
+        _           -> 0
+    end.
+
+bump(Color, [{Color,Amount}|L]) ->
+    NewAmount = Amount + 1,
+    [{Color, erlang:min(?quanta, NewAmount)}|L];
+bump(Color, [H|T]) ->
+    [H|bump(Color,T)];
+bump(Color, []) ->
+    [{Color,1}].
 
 
-get_pump_pos(#cell_square{origo_x = X, origo_y = Y, radius = R}) ->
-    {X, Y, R}.
+maybe_delete_object(_Canvas, undefined) -> ok;
+maybe_delete_object(Canvas, Id)         -> swCanvas:delete(Canvas, Id).
+
+
+%% for(Step, Radius-2, Step,
+%%     fun(I) ->
+%%             draw_pump(Canvas, Xorigo, Yorigo, I),
+%%             timer:sleep(1000)
+%%     end).
 
 set_pump_pos(#cell_square{size = Size} = Cell, Row, Col) ->
 
