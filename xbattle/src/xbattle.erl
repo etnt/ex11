@@ -17,10 +17,21 @@
 -include("xbattle.hrl").
 -include("ex11_lib.hrl").
 
+-ifdef(debug).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 
 -define(bg, 16#ffffcc).
 
+%% For each heart tick a Quanta (in percent) is what we can
+%% either pump into, or flow through the pipes of, a cell.
+-define(quanta, 25).
+
+
 -record(cell_square, {
+          point,    % board coordinates: {Row,Col}
+
           size = 60,
 
           origo_x,
@@ -228,35 +239,43 @@ cell_init(Controller, Canvas, Board, Cell0, {Row, Col} = Point) ->
     receive
         {Controller, start} ->
             Cell = set_pump_pos(Cell0, Row, Col),
-            cell_loop(Controller, Canvas, Board, Cell, Point)
+            cell_loop(Controller, Canvas, Board, Cell#cell_square{point=Point})
     end.
 
-cell_loop(Controller, Canvas, Board, Cell, Point) ->
+cell_loop(Controller, Canvas, Board, Cell) ->
     TickerPid = get_ticker_pid(Cell),
     receive
 
         {click, Wx, Wy} ->
-            ?dbg("~p Clicked at: (~p,~p) is inside cell: ~p , Origo(~p)~n",
-                 [self(), Wx, Wy, Point,
-                  {Cell#cell_square.origo_x,Cell#cell_square.origo_y}]),
             Side = compute_side(Cell, Wx, Wy),
             ?dbg("~p Side = ~p~n",[self(),Side]),
             NewCell = toggle_pipe(Canvas, Cell, Side),
-            cell_loop(Controller, Canvas, Board, NewCell, Point);
+            cell_loop(Controller, Canvas, Board, NewCell);
 
         {key, {_State,_Key,_Type,Val}, {_Wx, _Wy} = Pos} ->
             ?dbg("~p Got key: ~p at pos: ~p~n", [self(),Val,Pos]),
-            NewCell = process_key(Canvas, Board, Cell, Point, Val, Pos),
-            cell_loop(Controller, Canvas, Board, NewCell, Point);
+            NewCell = process_key(Canvas, Board, Cell, Val, Pos),
+            cell_loop(Controller, Canvas, Board, NewCell);
 
         {TickerPid, tick} ->
-            ?dbg("~p Got a tick!~n",[self()]),
-            NewCell = animate_pump(Canvas, Cell),
-            cell_loop(Controller, Canvas, Board, NewCell, Point);
+            ?dbg("~p Got a tick, bucket: ~p~n",
+                 [self(),Cell#cell_square.bucket]),
+            Cell1   = animate_pump(Canvas, Cell),
+            NewCell = flow_pipes(Canvas, Cell1),
+            cell_loop(Controller, Canvas, Board, NewCell);
+
+        {_From, {drop, Drop}} ->
+            ?dbg("~p Got a drop: ~p , bucket: ~p~n",
+                 [self(),Drop,Cell#cell_square.bucket]),
+            Cell1   = fill_bucket(Cell, Drop),
+            ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
+            Cell2   = redraw_fluid(Canvas, Cell1),
+            NewCell = flow_pipes(Canvas, Cell2),
+            cell_loop(Controller, Canvas, Board, NewCell);
 
         _X ->
-            ?dbg("~p EROR Got: ~p , TickerPid=~p~n",[self(),_X,TickerPid]),
-            cell_loop(Controller, Canvas, Board, Cell, Point)
+            ?dbg("~p ERROR Got: ~p , TickerPid=~p~n",[self(),_X,TickerPid]),
+            cell_loop(Controller, Canvas, Board, Cell)
 
     end.
 
@@ -323,7 +342,7 @@ draw_pipe(Canvas,
 
 get_ticker_pid(#cell_square{ticker_pid = Pid}) -> Pid.
 
-process_key(Canvas, _Board, Cell, _Point, Val, _Pos) ->
+process_key(Canvas, _Board, Cell, Val, _Pos) ->
 
     case Val of
 
@@ -365,13 +384,241 @@ maybe_start_ticker(#cell_square{build = B, build_max = B} = C) ->
 maybe_start_ticker(Cell) ->
     Cell.
 
+%% Our bucket may consist of several colors (in case of an
+%% occurring conflict for the control of the cell).
+%% Each pipe can only take Quanta amount of fluid at a time.
+%% Each color contribute with *max*: Quanta/BucketLen
+%% to be sent through each pipe.
+flow_pipes(Canvas,
+           #cell_square{pipes  = Pipes,
+                        bucket = Bucket} = Cell)
+  when Pipes =/= [] andalso Bucket =/= [] ->
+
+    %% FIXME: In the below, the 'first' pipe will get the most, etc..
+    NewCell =
+        lists:foldl(
+          fun({PipeDir,_Id}, #cell_square{bucket=ABucket} = ACell) ->
+                  {BBucket,Drop} = compute_drop(ABucket),
+                  send_drop(ACell#cell_square{bucket = BBucket}, PipeDir, Drop)
+          end, Cell, Pipes),
+
+    redraw_pipes(Canvas, redraw_fluid(Canvas, NewCell));
+%%
+flow_pipes(_Canvas, Cell) ->
+    Cell.
+
+
+send_drop(Cell, PipeDir, Drop) ->
+
+    NewCell = lookup_neighbor(Cell, PipeDir),
+    send_neighbor(NewCell, PipeDir, {drop, Drop}),
+    NewCell.
+
+
+send_neighbor(#cell_square{north_pid = Pid}, north, Msg)
+  when is_pid(Pid) -> Pid ! {self(), Msg};
+send_neighbor(#cell_square{east_pid  = Pid}, east, Msg)
+  when is_pid(Pid) -> Pid ! {self(), Msg};
+send_neighbor(#cell_square{south_pid = Pid}, south, Msg)
+  when is_pid(Pid) -> Pid ! {self(), Msg};
+send_neighbor(#cell_square{west_pid  = Pid}, west, Msg)
+  when is_pid(Pid) -> Pid ! {self(), Msg}.
+
+
+
+%% The very first time we need to use the ETS table.
+%% Then we have the Pid 'cached' in the Cell.
+lookup_neighbor(#cell_square{north_pid = Pid}=C, north) when is_pid(Pid) -> C;
+lookup_neighbor(#cell_square{east_pid  = Pid}=C, east)  when is_pid(Pid) -> C;
+lookup_neighbor(#cell_square{south_pid = Pid}=C, south) when is_pid(Pid) -> C;
+lookup_neighbor(#cell_square{west_pid  = Pid}=C, west)  when is_pid(Pid) -> C;
+lookup_neighbor(Cell, PipeDir) ->
+    NeighborPoint = get_neighbor_point(Cell, PipeDir),
+    case ets:lookup(?xbattle, NeighborPoint) of
+        [{_,CellPid}] -> set_neighbor(Cell, PipeDir, CellPid);
+        _             -> Cell  % outside the board?
+    end.
+
+get_neighbor_point(#cell_square{point = {Row,Col}}, north) -> {Row-1,Col};
+get_neighbor_point(#cell_square{point = {Row,Col}}, east)  -> {Row,Col+1};
+get_neighbor_point(#cell_square{point = {Row,Col}}, south) -> {Row+1,Col};
+get_neighbor_point(#cell_square{point = {Row,Col}}, west)  -> {Row,Col-1}.
+
+
+set_neighbor(Cell, north, Pid) -> Cell#cell_square{north_pid = Pid};
+set_neighbor(Cell, east, Pid)  -> Cell#cell_square{east_pid = Pid};
+set_neighbor(Cell, south, Pid) -> Cell#cell_square{south_pid = Pid};
+set_neighbor(Cell, west, Pid)  -> Cell#cell_square{west_pid = Pid}.
+
+
+
+-ifdef(EUNIT).
+
+
+compute_drop_test_() ->
+
+    [?_assertEqual(
+        {[], [{blue,25}]},
+        compute_drop([{blue,25}],
+                     25))
+
+    , ?_assertEqual(
+         {[{blue,5}], [{blue,25}]},
+         compute_drop([{blue,30}],
+                      25))
+
+    , ?_assertEqual(
+         {[{blue,18},{white,28}],[{blue,12},{white,12}]},
+         compute_drop([{blue,30}, {white,40}],
+                      25))
+
+    , ?_assertEqual(
+         {[{blue,15}],[{blue,15},{white,10}]},
+         compute_drop([{blue,30}, {white,10}],
+                      25))
+
+    ].
+
+
+-endif.
+
+%% A bucket may contain several colors of varying amount.
+%% Here try to compute Quanta drop of colours to be sent
+%% along a pipe in an optimized (and perhaps too anal..) way.
+compute_drop(Bucket) ->
+    compute_drop(Bucket, ?quanta).
+
+compute_drop(Bucket, Quanta) ->
+    compute_drop(Bucket, Quanta, []).
+
+compute_drop(Bucket, Quanta, Drop) ->
+    SubQuanta = erlang:trunc(Quanta/length(Bucket)),
+    {NewBucket, NewDrop} = compute_drop(Bucket, SubQuanta, [], Drop),
+
+    RealQuanta = lists:sum([X || {_,X} <- NewDrop]),
+    if (RealQuanta < Quanta) ->
+            compute_drop(NewBucket, erlang:max(0,Quanta-RealQuanta), NewDrop);
+       true ->
+            {NewBucket, NewDrop}
+    end.
+
+compute_drop([{Color,Amount} | Bucket], Quanta, NewBucket, Drop) ->
+
+    if (Amount > Quanta) ->
+            compute_drop(Bucket, Quanta,
+                         [{Color,Amount-Quanta}|NewBucket],
+                         add({Color,Quanta},Drop));
+       true ->
+            compute_drop(Bucket, Quanta,
+                         NewBucket,                % remove Color from Bucket!
+                         add({Color,Amount},Drop))
+    end;
+%%
+compute_drop([], _Quanta, NewBucket, Drop) ->
+    {NewBucket, Drop}.
+
+add({Color,Amount}, [{Color,X}|L]) -> [{Color,Amount+X}|L];
+add(Item, [H|L])                   -> [H|add(Item,L)];
+add(Item, [])                      -> [Item].
+
+
+%% We want to add a Drop of fluid but we can't overfill
+%% the bucket. Hence, we may have to cut down a bit of
+%% the Drop. We try to do the cut in a fair way.
+fill_bucket(#cell_square{bucket = Bucket} = Cell, Drop) ->
+
+    NewBucket = fill_up_bucket(Bucket, Drop),
+    Cell#cell_square{bucket = NewBucket}.
+
+
+-ifdef(EUNIT).
+
+fill_up_bucket_test_() ->
+
+    [?_assertEqual(
+        [{blue,25}],
+        fill_up_bucket([],[{blue,25}]))
+
+     , ?_assertEqual(
+          [{blue,50}],
+          fill_up_bucket([{blue,25}], [{blue,25}]))
+
+     , ?_assertEqual(
+          [{blue,37}, {white,12}],
+          fill_up_bucket([{blue,25}], [{blue,12}, {white,12}]))
+
+     , ?_assertEqual(
+          [{blue,75}, {white,25}],
+          %% The Bucket is full, so no change should happen
+          fill_up_bucket([{blue,75}, {white,25}], [{blue,12}, {white,12}]))
+
+     , ?_assertEqual(
+          [{blue,85}, {white,15}],
+          %% The Bucket will become full, so not all amount should be added
+          fill_up_bucket([{blue,80}, {white,10}], [{blue,12}, {white,12}]))
+
+     , ?_assertEqual(
+          [{blue,90}, {white,10}],
+          %% The Bucket will become full, so not all amount should be added
+          fill_up_bucket([{blue,90}, {white,5}], [{white,25}]))
+
+     ].
+
+-endif.
+
+fill_up_bucket(Bucket, Drop) ->
+
+    FluidAmount  = lists:sum([X || {_,X} <- Bucket]),
+    MaxAmount    = 100 - FluidAmount,
+    SplashAmount = lists:sum([X || {_,X} <- Drop]),
+
+    AcceptedDrop =
+        if (SplashAmount > MaxAmount) ->
+                cut_drop_splash(Drop, SplashAmount-MaxAmount);
+           true ->
+                Drop
+        end,
+
+    lists:foldl(
+      fun(Splash, ABucket) ->
+              add_to_bucket(Splash, ABucket)
+      end, Bucket, AcceptedDrop).
+
+
+%% We assume here that DropAmount > RmAmount , i.e
+%% we should be able to subtract RmAmount from the Drop.
+cut_drop_splash(Drop, RmAmount) ->
+
+    SubRmAmount = erlang:trunc(RmAmount/length(Drop)),
+    {NewDrop, RemAmount} = cut_drop_splash(Drop, SubRmAmount, [], 0),
+
+    LeftAmount = RmAmount-RemAmount,
+    if (LeftAmount > 0) ->
+            cut_drop_splash(NewDrop, LeftAmount);
+       true ->
+            NewDrop
+    end.
+
+
+cut_drop_splash([{Color,Amount} | Drop], SubRemAm,L,X) when Amount>SubRemAm ->
+    cut_drop_splash(Drop, SubRemAm, [{Color,Amount-SubRemAm}|L],X+SubRemAm);
+cut_drop_splash([{_,Amount} | Drop], SubRemAm, L,X) when Amount=<SubRemAm ->
+    cut_drop_splash(Drop, SubRemAm, L, X+Amount);
+cut_drop_splash([], _RemAmount, L, X) ->
+    {L,X}.
+
+
+add_to_bucket({Color,Amount}, [{Color,XAmount}|Bucket]) ->
+    [{Color,XAmount+Amount} | Bucket];
+add_to_bucket(Splash, [H|Bucket]) ->
+    [H | add_to_bucket(Splash, Bucket)];
+add_to_bucket(Splash, []) ->
+    [Splash].
+
+
 
 animate_pump(Canvas,
-             #cell_square{origo_x   = X,
-                          origo_y   = Y,
-                          bucket    = Bucket,
-                          bucket_id = BucketId
-                          } = Cell) ->
+             #cell_square{bucket = Bucket} = Cell) ->
 
     {Radius, Color, NewBucket} = pump(Cell),
 
@@ -381,25 +628,71 @@ animate_pump(Canvas,
     if OldAmount == NewAmount ->
             Cell;
        true ->
-            Id = draw(Canvas, Color, {filledCircle, X, Y, Radius}),
-            maybe_delete_object(Canvas, BucketId),
-            NewCell = redraw_pipes(Canvas, Cell),
-            NewCell#cell_square{bucket    = NewBucket,
-                                bucket_id = Id}
+            NewCell = Cell#cell_square{bucket = NewBucket},
+            draw_fluid(Canvas, NewCell, Radius, Color)
     end.
 
+redraw_fluid(Canvas,
+             #cell_square{pump_color = Color,
+                          bucket     = Bucket,
+                          radius     = Radius} = Cell) ->
+
+    Amount      = get_amount(Color, Bucket),
+    FluidRadius = erlang:trunc(Radius * (Amount/100)),
+
+    %% Note: Perhaps we should calculate the 'exact' fluid color
+    %% from the contents in the bucket!?
+    draw_fluid(Canvas, Cell, FluidRadius, Color).
+
+
+
+draw_fluid(Canvas,
+           #cell_square{origo_x   = X,
+                        origo_y   = Y,
+                        bucket_id = BucketId
+                       } = Cell,
+           Radius,
+           Color) ->
+
+    Id = draw(Canvas, Color, {filledCircle, X, Y, Radius}),
+    maybe_delete_object(Canvas, BucketId),
+    NewCell = redraw_pipes(Canvas, Cell),
+    NewCell#cell_square{bucket_id = Id}.
+
+
+
 %% We have hard coded the amount of fluid to
-%% be pumped in quantas of 1/4.
--define(quanta, 4).
+%% be pumped in a pre-defined Quanta.
 pump(#cell_square{radius     = Radius,
                   pump_color = Color,
                   bucket     = Bucket}) ->
-    NewBucket = bump(Color, Bucket),
+    Bucket1   = bump(Color, Bucket),
+    NewBucket = dilute_other_colors(Color, ?quanta, Bucket1),
     Amount    = get_amount(Color, NewBucket),
 
-    {(Radius div ?quanta) * Amount, % current amount of cell fluid
-     Color,                         % FIXME a mix of colors if more than one?
+    {erlang:trunc(Radius * (Amount/100)), % current amount of cell fluid
+     Color,                            % FIXME a mix of colors if more than one?
      NewBucket}.
+
+
+%% We add Quanta amount of Color to the Bucket,
+%% then subtract Quanta/(Colors-1) from the other
+%% existing colors.
+dilute_other_colors(Color, Quanta, Bucket)
+  when length(Bucket) > 1 ->
+
+    Num = length(Bucket) - 1,
+    SubAmount = erlang:trunc(Quanta/Num),
+    lists:map(
+      fun({C,_} = Item) when C == Color ->
+              Item;
+         ({C,A}) ->
+              {C, erlang:max(0, A - SubAmount)}
+      end, Bucket);
+%%
+dilute_other_colors(_Color, _quanta, Bucket) ->
+    Bucket.
+
 
 get_amount(Color, Bucket) ->
     case lists:keyfind(Color, 1, Bucket) of
@@ -408,12 +701,12 @@ get_amount(Color, Bucket) ->
     end.
 
 bump(Color, [{Color,Amount}|L]) ->
-    NewAmount = Amount + 1,
-    [{Color, erlang:min(?quanta, NewAmount)}|L];
+    NewAmount = Amount + ?quanta,
+    [{Color, erlang:min(100, NewAmount)}|L];
 bump(Color, [H|T]) ->
     [H|bump(Color,T)];
 bump(Color, []) ->
-    [{Color,1}].
+    [{Color,?quanta}].
 
 
 maybe_delete_object(_Canvas, undefined) -> ok;
