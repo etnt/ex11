@@ -42,9 +42,8 @@
           %% Heart ticks...
           ticker_pid,
 
-          %% Have we opened a pipe and if so in what direction?
-          pipe_direction,
-          pipe_id,          % canvas Id to be able to remove it
+          %% Keep track of any open pipes
+          pipes = [],             % [{Direction,Id}, ...]
 
           %% Our neighbors.
           north_pid,
@@ -242,7 +241,7 @@ cell_loop(Controller, Canvas, Board, Cell, Point) ->
                   {Cell#cell_square.origo_x,Cell#cell_square.origo_y}]),
             Side = compute_side(Cell, Wx, Wy),
             ?dbg("~p Side = ~p~n",[self(),Side]),
-            NewCell = draw_pipe(Canvas, Cell, Side),
+            NewCell = toggle_pipe(Canvas, Cell, Side),
             cell_loop(Controller, Canvas, Board, NewCell, Point);
 
         {key, {_State,_Key,_Type,Val}, {_Wx, _Wy} = Pos} ->
@@ -280,21 +279,34 @@ compute_side(#cell_square{origo_x = Ox,
         A when A>=225 andalso A<315 -> south
     end.
 
-%% Force a redraw of a pipe if such exist.
-redraw_pipe(Canvas,
-            #cell_square{pipe_direction = PipeDir} = Cell) 
-    when PipeDir =/= undefined ->
+%% Force a redraw of all existing pipes.
+redraw_pipes(Canvas, #cell_square{pipes = Pipes} = Cell) ->
 
-    draw_pipe(Canvas, Cell#cell_square{pipe_direction = undefined}, PipeDir);
-redraw_pipe(_Canvas, _Cell) ->
-    ok.
+    lists:foldl(
+      fun({Side,Id}, XCell) ->
+              maybe_delete_object(Canvas, Id),
+              draw_pipe(Canvas, XCell, Side)
+      end, Cell#cell_square{pipes=[]}, Pipes).
 
 
+toggle_pipe(Canvas, #cell_square{pipes = Pipes} = Cell, Side) ->
+
+    case lists:keytake(Side, 1, Pipes) of
+        {value, {Side, Id}, NewPipes} ->
+            %% Turn off the pipe
+            maybe_delete_object(Canvas, Id),
+            Cell#cell_square{pipes = NewPipes};
+        false ->
+            draw_pipe(Canvas, Cell, Side)
+    end.
+
+%% Note: we will assume that a check has been made already
+%% to make sure that the pipe doesn't exist already!
 draw_pipe(Canvas,
           #cell_square{origo_x = Ox,
                        origo_y = Oy,
                        radius  = Radius,
-                       pipe_direction = undefined} = Cell,
+                       pipes   = Pipes} = Cell,
           Side) ->
 
     {X,Y} = case Side of
@@ -306,28 +318,7 @@ draw_pipe(Canvas,
 
     Id = draw(Canvas, black2, {line, Ox,Oy,X,Y}),
 
-    Cell#cell_square{pipe_direction = Side,
-                     pipe_id        = Id};
-%%
-draw_pipe(Canvas,
-          #cell_square{pipe_direction = PipeDir,
-                       pipe_id        = Id} = Cell,
-          Side)
-  when PipeDir =/= undefined andalso PipeDir =/= Side ->
-
-    maybe_delete_object(Canvas, Id),
-
-    draw_pipe(Canvas,
-              Cell#cell_square{pipe_direction = undefined,
-                               pipe_id        = undefined},
-              Side);
-%%
-draw_pipe(_Canvas,
-          #cell_square{pipe_direction = PipeDir} = Cell,
-          Side)
-  when PipeDir == Side ->
-
-    Cell.
+    Cell#cell_square{pipes = [{Side,Id} | Pipes]}.
 
 
 get_ticker_pid(#cell_square{ticker_pid = Pid}) -> Pid.
@@ -392,9 +383,9 @@ animate_pump(Canvas,
        true ->
             Id = draw(Canvas, Color, {filledCircle, X, Y, Radius}),
             maybe_delete_object(Canvas, BucketId),
-            redraw_pipe(Canvas, Cell),
-            Cell#cell_square{bucket    = NewBucket,
-                             bucket_id = Id}
+            NewCell = redraw_pipes(Canvas, Cell),
+            NewCell#cell_square{bucket    = NewBucket,
+                                bucket_id = Id}
     end.
 
 %% We have hard coded the amount of fluid to
