@@ -264,13 +264,27 @@ cell_loop(Controller, Canvas, Board, Cell) ->
             NewCell = flow_pipes(Canvas, Cell1),
             cell_loop(Controller, Canvas, Board, NewCell);
 
-        {_From, {drop, Drop}} ->
+        {From, {drop, Drop}} ->
             ?dbg("~p Got a drop: ~p , bucket: ~p~n",
                  [self(),Drop,Cell#cell_square.bucket]),
-            Cell1   = fill_bucket(Cell, Drop),
+            case fill_bucket(Cell, Drop) of
+                {Cell1, [] = _NotAcceptedDrop} ->
+                    ok; % We accepted the complete Drop
+                {Cell1, NotAcceptedDrop} ->
+                    From ! {self(), not_accepted_drop, NotAcceptedDrop}
+            end,
             ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
             Cell2   = redraw_fluid(Canvas, Cell1),
             NewCell = flow_pipes(Canvas, Cell2),
+            cell_loop(Controller, Canvas, Board, NewCell);
+
+        {_From, not_accepted_drop, Drop} ->
+            ?dbg("~p Got not_accepted_drop: ~p , bucket: ~p~n",
+                 [self(),Drop,Cell#cell_square.bucket]),
+            %% Try to put back the spill, if possible...
+            {Cell1, _NotAcceptedDrop} = fill_bucket(Cell, Drop),
+            ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
+            NewCell = redraw_fluid(Canvas, Cell1),
             cell_loop(Controller, Canvas, Board, NewCell);
 
         _X ->
@@ -278,6 +292,7 @@ cell_loop(Controller, Canvas, Board, Cell) ->
             cell_loop(Controller, Canvas, Board, Cell)
 
     end.
+
 
 %% See: https://en.wikipedia.org/wiki/Atan2
 compute_side(#cell_square{origo_x = Ox,
@@ -397,9 +412,12 @@ flow_pipes(Canvas,
     %% FIXME: In the below, the 'first' pipe will get the most, etc..
     NewCell =
         lists:foldl(
-          fun({PipeDir,_Id}, #cell_square{bucket=ABucket} = ACell) ->
+          fun({PipeDir,_Id}, #cell_square{bucket=ABucket} = ACell)
+             when ABucket =/= [] ->
                   {BBucket,Drop} = compute_drop(ABucket),
-                  send_drop(ACell#cell_square{bucket = BBucket}, PipeDir, Drop)
+                  send_drop(ACell#cell_square{bucket = BBucket}, PipeDir, Drop);
+             (_, ACell) ->
+                  ACell
           end, Cell, Pipes),
 
     redraw_pipes(Canvas, redraw_fluid(Canvas, NewCell));
@@ -492,29 +510,38 @@ compute_drop(Bucket, Quanta) ->
     compute_drop(Bucket, Quanta, []).
 
 compute_drop(Bucket, Quanta, Drop) ->
-    SubQuanta = erlang:trunc(Quanta/length(Bucket)),
-    {NewBucket, NewDrop} = compute_drop(Bucket, SubQuanta, [], Drop),
 
-    RealQuanta = lists:sum([X || {_,X} <- NewDrop]),
-    if (RealQuanta < Quanta) ->
-            compute_drop(NewBucket, erlang:max(0,Quanta-RealQuanta), NewDrop);
-       true ->
-            {NewBucket, NewDrop}
+    SubQuanta = erlang:trunc(Quanta/length(Bucket)),
+
+    case compute_the_drop(Bucket, SubQuanta, [], Drop) of
+        {[] = _NewBucket, _NewDrop} = Result ->
+            Result;
+
+        {NewBucket, NewDrop} ->
+
+            RealQuanta = lists:sum([X || {_,X} <- NewDrop]),
+            if (RealQuanta < Quanta) ->
+                    compute_drop(NewBucket,
+                                 erlang:max(0,Quanta-RealQuanta),
+                                 NewDrop);
+               true ->
+                    {NewBucket, NewDrop}
+            end
     end.
 
-compute_drop([{Color,Amount} | Bucket], Quanta, NewBucket, Drop) ->
+compute_the_drop([{Color,Amount} | Bucket], Quanta, NewBucket, Drop) ->
 
     if (Amount > Quanta) ->
-            compute_drop(Bucket, Quanta,
-                         [{Color,Amount-Quanta}|NewBucket],
-                         add({Color,Quanta},Drop));
+            compute_the_drop(Bucket, Quanta,
+                             [{Color,Amount-Quanta}|NewBucket],
+                             add({Color,Quanta},Drop));
        true ->
-            compute_drop(Bucket, Quanta,
-                         NewBucket,                % remove Color from Bucket!
-                         add({Color,Amount},Drop))
+            compute_the_drop(Bucket, Quanta,
+                             NewBucket,              % remove Color from Bucket!
+                             add({Color,Amount},Drop))
     end;
 %%
-compute_drop([], _Quanta, NewBucket, Drop) ->
+compute_the_drop([], _Quanta, NewBucket, Drop) ->
     {NewBucket, Drop}.
 
 add({Color,Amount}, [{Color,X}|L]) -> [{Color,Amount+X}|L];
@@ -527,8 +554,28 @@ add(Item, [])                      -> [Item].
 %% the Drop. We try to do the cut in a fair way.
 fill_bucket(#cell_square{bucket = Bucket} = Cell, Drop) ->
 
-    NewBucket = fill_up_bucket(Bucket, Drop),
-    Cell#cell_square{bucket = NewBucket}.
+    {NewBucket, NotAcceptedDrop} = fill_up_bucket(Bucket, Drop),
+    {Cell#cell_square{bucket = NewBucket},
+     NotAcceptedDrop}.
+
+fill_up_bucket(Bucket, Drop) ->
+
+    FluidAmount  = lists:sum([X || {_,X} <- Bucket]),
+    MaxAmount    = 100 - FluidAmount,
+    SplashAmount = lists:sum([X || {_,X} <- Drop]),
+
+    {AcceptedDrop, NotAcceptedDrop} =
+        if (SplashAmount > MaxAmount) ->
+                cut_drop_splash(Drop, SplashAmount-MaxAmount);
+           true ->
+                {Drop, []}
+        end,
+
+    {lists:foldl(
+       fun(Splash, ABucket) ->
+               add_to_bucket(Splash, ABucket)
+       end, Bucket, AcceptedDrop),
+     NotAcceptedDrop}.
 
 
 -ifdef(EUNIT).
@@ -566,46 +613,58 @@ fill_up_bucket_test_() ->
 
 -endif.
 
-fill_up_bucket(Bucket, Drop) ->
-
-    FluidAmount  = lists:sum([X || {_,X} <- Bucket]),
-    MaxAmount    = 100 - FluidAmount,
-    SplashAmount = lists:sum([X || {_,X} <- Drop]),
-
-    AcceptedDrop =
-        if (SplashAmount > MaxAmount) ->
-                cut_drop_splash(Drop, SplashAmount-MaxAmount);
-           true ->
-                Drop
-        end,
-
-    lists:foldl(
-      fun(Splash, ABucket) ->
-              add_to_bucket(Splash, ABucket)
-      end, Bucket, AcceptedDrop).
-
 
 %% We assume here that DropAmount > RmAmount , i.e
-%% we should be able to subtract RmAmount from the Drop.
-cut_drop_splash(Drop, RmAmount) ->
+%% we should be able to subtract 'TpBeRemovedAmount' from the Drop.
+%% We also want to keep track of what exactly we have removed in
+%% order to be able to return it to the sender of the Drop.
+cut_drop_splash(Drop, ToBeRemovedAmount) ->
+    cut_drop_splash(Drop, ToBeRemovedAmount, []).
 
-    SubRmAmount = erlang:trunc(RmAmount/length(Drop)),
-    {NewDrop, RemAmount} = cut_drop_splash(Drop, SubRmAmount, [], 0),
+cut_drop_splash(Drop, ToBeRemovedAmount, TotRemovedDrop) ->
 
-    LeftAmount = RmAmount-RemAmount,
+    SubRmAmount = erlang:trunc(ToBeRemovedAmount/length(Drop)),
+    {NewDrop, RemovedDrop} =
+        cut_drop_splash(Drop, SubRmAmount, [], TotRemovedDrop),
+
+    RemovedAmount = lists:sum([X || {_Color,X} <- RemovedDrop]),
+
+    LeftAmount = ToBeRemovedAmount-RemovedAmount,
     if (LeftAmount > 0) ->
-            cut_drop_splash(NewDrop, LeftAmount);
+            cut_drop_splash(NewDrop, LeftAmount, RemovedDrop);
        true ->
-            NewDrop
+            {NewDrop, RemovedDrop}
     end.
 
+%% Each Item in the Drop will have 'AmountToBeRemoved' taken away.
+%% In some cases that means the Color will be removed completely,
+%% hence we may not be able to remove as much as what was asked for.
+%% However, we keep track of what was removed so that it can be remedied
+%% by the caller of this function.
+cut_drop_splash([{Color,Amount} | Drop],
+                AmountToBeRemoved,
+                NewDropAcc,
+                WhatWasRemoved)
+  when Amount>AmountToBeRemoved ->
 
-cut_drop_splash([{Color,Amount} | Drop], SubRemAm,L,X) when Amount>SubRemAm ->
-    cut_drop_splash(Drop, SubRemAm, [{Color,Amount-SubRemAm}|L],X+SubRemAm);
-cut_drop_splash([{_,Amount} | Drop], SubRemAm, L,X) when Amount=<SubRemAm ->
-    cut_drop_splash(Drop, SubRemAm, L, X+Amount);
-cut_drop_splash([], _RemAmount, L, X) ->
-    {L,X}.
+    cut_drop_splash(Drop,
+                    AmountToBeRemoved,
+                    [{Color,Amount-AmountToBeRemoved}|NewDropAcc],
+                    add_to_bucket({Color,AmountToBeRemoved}, WhatWasRemoved));
+%%
+cut_drop_splash([{_,Amount} = Item | Drop],
+                AmountToBeRemoved,
+                NewDropAcc,
+                WhatWasRemoved)
+  when Amount=<AmountToBeRemoved ->
+
+    cut_drop_splash(Drop,
+                    AmountToBeRemoved,
+                    NewDropAcc,
+                    add_to_bucket(Item, WhatWasRemoved));
+%%
+cut_drop_splash([], _AmountToBeRemoved, NewDrop, WhatWasRemoved) ->
+    {NewDrop, WhatWasRemoved}.
 
 
 add_to_bucket({Color,Amount}, [{Color,XAmount}|Bucket]) ->
