@@ -274,7 +274,7 @@ cell_loop(Controller, Canvas, Board, Cell) ->
                     From ! {self(), not_accepted_drop, NotAcceptedDrop}
             end,
             ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
-            Cell2   = redraw_fluid(Canvas, Cell1),
+            Cell2   = maybe_redraw_fluid(Canvas, Cell1, Cell),
             NewCell = flow_pipes(Canvas, Cell2),
             cell_loop(Controller, Canvas, Board, NewCell);
 
@@ -284,7 +284,7 @@ cell_loop(Controller, Canvas, Board, Cell) ->
             %% Try to put back the spill, if possible...
             {Cell1, _NotAcceptedDrop} = fill_bucket(Cell, Drop),
             ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
-            NewCell = redraw_fluid(Canvas, Cell1),
+            NewCell = maybe_redraw_fluid(Canvas, Cell1, Cell),
             cell_loop(Controller, Canvas, Board, NewCell);
 
         _X ->
@@ -292,6 +292,18 @@ cell_loop(Controller, Canvas, Board, Cell) ->
             cell_loop(Controller, Canvas, Board, Cell)
 
     end.
+
+
+%% Only redraw the fluid id the Bucket amount has changed!
+maybe_redraw_fluid(Canvas, NewCell, OldCell) ->
+
+    case {bucket_amount(NewCell), bucket_amount(OldCell)} of
+        {Amount,Amount} -> NewCell;
+        _               -> redraw_fluid(Canvas, NewCell)
+    end.
+
+bucket_amount(#cell_square{bucket = Bucket}) ->
+    lists:sum([X || {_Color,X} <- Bucket]).
 
 
 %% See: https://en.wikipedia.org/wiki/Atan2
