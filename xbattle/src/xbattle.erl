@@ -248,7 +248,7 @@ cell_loop(Controller, Canvas, Board, Cell) ->
 
         {click, Wx, Wy} ->
             Side = compute_side(Cell, Wx, Wy),
-            ?dbg("~p Side = ~p~n",[self(),Side]),
+            %%?dbg("~p Side = ~p~n",[self(),Side]),
             NewCell = toggle_pipe(Canvas, Cell, Side),
             cell_loop(Controller, Canvas, Board, NewCell);
 
@@ -258,8 +258,8 @@ cell_loop(Controller, Canvas, Board, Cell) ->
             cell_loop(Controller, Canvas, Board, NewCell);
 
         {TickerPid, tick} ->
-            ?dbg("~p Got a tick, bucket: ~p~n",
-                 [self(),Cell#cell_square.bucket]),
+            %%?dbg("~p Got a tick, bucket: ~p~n",
+            %%[self(),Cell#cell_square.bucket]),
             Cell1   = animate_pump(Canvas, Cell),
             NewCell = flow_pipes(Canvas, Cell1),
             cell_loop(Controller, Canvas, Board, NewCell);
@@ -273,7 +273,8 @@ cell_loop(Controller, Canvas, Board, Cell) ->
                 {Cell1, NotAcceptedDrop} ->
                     From ! {self(), not_accepted_drop, NotAcceptedDrop}
             end,
-            ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
+            %%?dbg("~p after fill, bucket: ~p~n",
+            %%[self(),Cell1#cell_square.bucket]),
             Cell2   = maybe_redraw_fluid(Canvas, Cell1, Cell),
             NewCell = flow_pipes(Canvas, Cell2),
             cell_loop(Controller, Canvas, Board, NewCell);
@@ -283,7 +284,8 @@ cell_loop(Controller, Canvas, Board, Cell) ->
                  [self(),Drop,Cell#cell_square.bucket]),
             %% Try to put back the spill, if possible...
             {Cell1, _NotAcceptedDrop} = fill_bucket(Cell, Drop),
-            ?dbg("~p after fill, bucket: ~p~n",[self(),Cell1#cell_square.bucket]),
+            %%?dbg("~p after fill, bucket: ~p~n",
+            %%   [self(),Cell1#cell_square.bucket]),
             NewCell = maybe_redraw_fluid(Canvas, Cell1, Cell),
             cell_loop(Controller, Canvas, Board, NewCell);
 

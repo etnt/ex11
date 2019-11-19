@@ -34,6 +34,7 @@ start() ->
     end.
 init(From) ->
     process_flag(trap_exit, true),
+    init_reply_list(),
     case ex11_lib_driver:start() of
         {ok, {Driver, Display, Screen}} ->
             %% Screen is the screen we were started with
@@ -68,6 +69,7 @@ init(From) ->
             %% io:format("ex11_lib_control ie DRIVER=~p~n",[Driver]),
             %% io:format("Starting a keyboard driver~n"),
             ex11_lib_keyboard_driver:ensure_started(self()),
+            timer:send_interval(4000,self(),gc_reply),
             loop(From, Driver, 1, Display, Db0, []);
         Error ->
             reply(From, Error)
@@ -89,11 +91,14 @@ store1(Key, Val, Dict) ->
 
 %% sendLocalCmd can only be used for server casts NOT rpcs
 
-sendLocalCmd({cast, Bin}) ->
-    self() ! {sendCmd, Bin};
-sendLocalCmd(_Other) ->
-    io:format("** illegal usage sendLocalCommand ***"),
-    exit({internalError,ex11_lib_connect,sendLocalCmd}).
+%% sendLocalCmd({cast, Bin}) ->
+%%     self() ! {sendCmd, Bin};
+%% sendLocalCmd(_Other) ->
+%%     io:format("** illegal usage sendLocalCommand ***"),
+%%     exit({internalError,ex11_lib_connect,sendLocalCmd}).
+
+sendLocalCmdFlush({cast, Bin}) ->
+    self() ! {sendCmdFlush, Bin}.
 
 onExit(Pid, D0) ->
     kill_owned_windows(Pid, D0).
@@ -134,8 +139,7 @@ really_kill_window(Win, D0) ->
                  erase(Win, D0)
          end,
     %% B1 = <<Win:32>>, io:format("Destroy window:~p~n",[B1]),
-    sendLocalCmd(eDestroyWindow(Win)),
-    self() ! flush,
+    sendLocalCmdFlush(eDestroyWindow(Win)),
     D1.
 
 add_new_window(Pid, Wid, Parent, Depth, D0) ->
@@ -204,33 +208,71 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
             reply(From, fetch(default_depth, D0)),
             loop(Client, Driver, Seq, Display, D0, FreeIds);
         flush ->
-            %% io:format("lib_connect got flush~n"),
+            %%io:format("lib_connect got flush~n"),
             Driver ! flush,
             loop(Client, Driver, Seq, Display, D0, FreeIds);
         {sendCmd, C} ->
-            %% io:format("Command:~p ~p~n",[Seq,C]),
+            %%io:format("~p(~p) Command:~p ~p~n",[?MODULE,?LINE,Seq,C]),
             ex11_lib_driver:send_cmd(Driver, C),
             loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+
+        {sendCmdFlush, C} ->
+            %%io:format("~p(~p) Command:~p ~p~n",[?MODULE,?LINE,Seq,C]),
+            ex11_lib_driver:send_cmd_flush(Driver, C),
+            loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+
+        %% {From, {cmd, {call, C, ReplyType}}} ->
+        %%     io:format("~p(~p) I want a reply type ~w to msg:~p~n",
+        %%               [?MODULE,?LINE,ReplyType,Seq]),
+        %%     ex11_lib_driver:send_cmd_flush(Driver, C),
+        %%     receive
+        %%         {reply, Seq, R} ->
+        %%             io:format("Reply (~p) was ~p bytes~n",[ReplyType, size(R)]),
+        %%             Parse = ex11_lib:pReply(ReplyType, R),
+        %%             reply(From, {ok, Parse});
+        %%         {reply, Seq1, _R} ->
+        %%             io:format("Reply with wrong sequence number:~p , Msg=~p~n",
+        %%                       [Seq1,_R]),
+        %%             reply(From, {error, sync});
+        %%         {error, Seq, E} ->
+        %%             reply(From, {error, E})
+        %%     after 3000 ->
+        %%             reply(From, {error, noReply})
+        %%     end,
+        %%     loop(Client, Driver, Seq+1, Display, D0, FreeIds);
         {From, {cmd, {call, C, ReplyType}}} ->
-            %% io:format("I want a reply type ~w to msg:~p~n", 
-            %% [ReplyType,Seq]),
-            ex11_lib_driver:send_cmd(Driver, C),
-            Driver ! flush,
-            receive
-                {reply, Seq, R} ->
-                    %% io:format("Reply (~p) was ~p bytes~n",
-                    %% [ReplyType, size(R)]),
+            io:format("~p(~p) I want a reply type ~w to msg:~p~n",
+                      [?MODULE,?LINE,ReplyType,Seq]),
+            push_reply(Seq, From, ReplyType),
+            ex11_lib_driver:send_cmd_flush(Driver, C),
+            loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+
+
+        {reply, SeqNo, R} ->
+            io:format("Reply (~p) was ~p bytes: ~p~n",[SeqNo, size(R),R]),
+            case get_reply(SeqNo) of
+                {ok,From,ReplyType} ->
                     Parse = ex11_lib:pReply(ReplyType, R),
                     reply(From, {ok, Parse});
-                {reply, Seq1, _R} ->
-                    io:format("Reply with wrong sequence number:~p~n", [Seq1]),
-                    reply(From, {error, sync});
-                {error, Seq, E} ->
-                    reply(From, {error, E})
-            after 3000 ->
-                    reply(From, {error, noReply})
+                _ ->
+                    io:format("No reply recipient found to Seq(~p)~n",[SeqNo])
             end,
-            loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+            loop(Client, Driver, Seq, Display, D0, FreeIds);
+
+        {error, SeqNo, E} ->
+            case get_reply(SeqNo) of
+                {ok,From,_ReplyType} ->
+                    reply(From, {error, E});
+                _ ->
+                    io:format("No error recipient found to Seq(~p)~n",[SeqNo])
+            end,
+            loop(Client, Driver, Seq, Display, D0, FreeIds);
+
+        gc_reply ->
+            gc_reply(),
+            loop(Client, Driver, Seq, Display, D0, FreeIds);
+
+
         {From, {xGetVar, Key}} ->
             reply(From, find(Key, D0)),
             loop(Client, Driver, Seq, Display, D0, FreeIds);
@@ -284,6 +326,44 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
                       [X]),
             loop(Client, Driver, Seq, Display, D0, FreeIds)
     end.
+
+%%
+%% Attempt to handle replies out of order
+%%
+init_reply_list() ->
+    put(reply_list, []).
+
+push_reply(Seq, From, ReplyType) ->
+    case get(reply_list) of
+        undefined ->
+            put(reply_list,
+                [{Seq,From,ReplyType,erlang:monotonic_time(second)}]);
+        L ->
+            put(reply_list,
+                [{Seq,From,ReplyType,erlang:monotonic_time(second)} | L])
+    end.
+
+get_reply(Seq) ->
+    case lists:keytake(Seq, 1, get(reply_list)) of
+        {value, {Seq,From,ReplyType,_Tc}, NewReplyList} ->
+            put(reply_list, NewReplyList),
+            {ok, From, ReplyType};
+        false ->
+            not_found
+    end.
+
+gc_reply() ->
+    put(reply_list, gc_reply(get(reply_list), erlang:monotonic_time(second))).
+
+gc_reply([{_,_,_,OldTc}|L], NewTc) when NewTc-OldTc > 3 ->
+    gc_reply(L, NewTc);
+gc_reply([H|L], NewTc) ->
+    [H|gc_reply(L, NewTc)];
+gc_reply([], _) ->
+    [].
+
+
+
 
 dispatchable_type(expose)          -> true;
 dispatchable_type(buttonPress)     -> true;

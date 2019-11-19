@@ -27,7 +27,11 @@
 %%                                 Pid = is the Pid of the driver process
 %%    {error, Why} otherwise
 
--export([start/0, send_cmd/2, new_id/1, get_display/2]).
+-export([start/0,
+         send_cmd/2,
+         send_cmd_flush/2,
+         new_id/1,
+         get_display/2]).
 
 
 -import(ex11_lib, [pError/1, pEvent/1]).
@@ -40,6 +44,8 @@ new_id(Pid) -> rpc(Pid, create_id).
 get_display(Pid, Key) -> rpc(Pid, {get_display, Key}).
 
 send_cmd(Pid, C) -> Pid ! {cmd, C}.
+
+send_cmd_flush(Pid, C) -> Pid ! {cmd_flush, C}.
 
 rpc(Pid, Q) ->
     Pid ! {self(), Q},
@@ -88,20 +94,29 @@ loop(Client, Fd, Bin, Max, OB, LO) ->
                     send(Fd, reverse(OB)),
                     loop(Client, Fd, Bin, Max, [C], size(C))
             end;
+
+        {cmd_flush, C} ->
+            send(Fd, reverse([C|OB])),
+            loop(Client, Fd, Bin, Max, [], 0);
+
         flush ->
             %% io:format("Driver got flush~n"),
             send(Fd, reverse(OB)),
             loop(Client, Fd, Bin, Max, [], 0);
+
         {tcp, _Port, BinX} ->
-            io:format("~p: received:~p bytes~n",[?MODULE,size(BinX)]),
+            %%io:format("~p: received:~p bytes~n",[?MODULE,size(BinX)]),
             Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
             loop(Client, Fd, Bin1, Max, OB, LO);
+
         {unixdom, _Socket, BinX} ->
             Bin1 = handle(Client, <<Bin/binary, BinX/binary>>),
             loop(Client, Fd, Bin1, Max, OB, LO);
+
         {'EXIT', _, die} ->
             gen_tcp:close(Fd),
             exit(killed);
+
         Any ->
             io:format("top_loop (driver) got:~p~n",[Any]),
             loop(Client, Fd, Bin, Max, OB, LO)
