@@ -9,6 +9,7 @@
 -module(xbattle).
 
 -export([start/0]).
+-export([add_rgb/2, add_rgb2/2]).
 
 -import(sw, [xStart/1]).
 -import(swCanvas, [newPen/4, draw/3, delete/2]).
@@ -819,3 +820,41 @@ ticker(Pid) ->
             Pid ! {self(), tick},
             ticker(Pid)
     end.
+
+
+%%
+%% Alpha blending is the process of combining a translucent foreground color
+%% with a background color, thereby producing a new blended color.
+%% The degree of the foreground color's translucency may range from completely
+%% transparent to completely opaque. If the foreground color is completely
+%% transparent, the blended color will be the background color. Conversely,
+%% if it is completely opaque, the blended color will be the foreground color.
+%% The translucency can range between these extremes, in which case the blended
+%% color is computed as a weighted average of the foreground and background colors.
+%%
+%% https://stackoverflow.com/questions/726549/algorithm-for-additive-color-mixing-for-rgb-values
+%%
+-record(rgba, {r=0,g=0,b=0,a=0.5}).
+
+add_rgb(FgColor, BgColor)
+  when is_integer(FgColor) andalso is_integer(BgColor) ->
+    add_rgb(color2rgba(FgColor), color2rgba(BgColor));
+%%
+add_rgb(X, Y) when is_record(X,rgba) andalso is_record(Y,rgba) ->
+    A = 1 - ((1 - X#rgba.a)*(1 - Y#rgba.a)),
+    #rgba{r = (X#rgba.r * X#rgba.a)/A + (Y#rgba.r * Y#rgba.a)*((1-X#rgba.a)/A),
+          g = (X#rgba.g * X#rgba.a)/A + (Y#rgba.g * Y#rgba.a)*((1-X#rgba.a)/A),
+          b = (X#rgba.b * X#rgba.a)/A + (Y#rgba.b * Y#rgba.a)*((1-X#rgba.a)/A)}.
+
+color2rgba(Color) ->
+    #rgba{r = (Color band 16#ff0000) bsr 16,
+          g = (Color band 16#00ff00) bsr 8,
+          b = (Color band 16#0000ff)}.
+
+%% Perhaps a more intuitive way of blending.
+add_rgb2(Color1, Color2) when is_integer(Color1) andalso is_integer(Color2) ->
+    A = color2rgba(Color1),
+    B = color2rgba(Color2),
+    #rgba{r = (A#rgba.r + B#rgba.r) div 2,
+          g = (A#rgba.g + B#rgba.g) div 2,
+          b = (A#rgba.b + B#rgba.b) div 2}.

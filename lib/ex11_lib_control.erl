@@ -214,12 +214,12 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
         {sendCmd, C} ->
             %%io:format("~p(~p) Command:~p ~p~n",[?MODULE,?LINE,Seq,C]),
             ex11_lib_driver:send_cmd(Driver, C),
-            loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+            loop(Client, Driver, bump_seq(Seq), Display, D0, FreeIds);
 
         {sendCmdFlush, C} ->
             %%io:format("~p(~p) Command:~p ~p~n",[?MODULE,?LINE,Seq,C]),
             ex11_lib_driver:send_cmd_flush(Driver, C),
-            loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+            loop(Client, Driver, bump_seq(Seq), Display, D0, FreeIds);
 
         %% {From, {cmd, {call, C, ReplyType}}} ->
         %%     io:format("~p(~p) I want a reply type ~w to msg:~p~n",
@@ -245,7 +245,7 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
                       [?MODULE,?LINE,ReplyType,Seq]),
             push_reply(Seq, From, ReplyType),
             ex11_lib_driver:send_cmd_flush(Driver, C),
-            loop(Client, Driver, Seq+1, Display, D0, FreeIds);
+            loop(Client, Driver, bump_seq(Seq), Display, D0, FreeIds);
 
 
         {reply, SeqNo, R} ->
@@ -326,6 +326,11 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
                       [X]),
             loop(Client, Driver, Seq, Display, D0, FreeIds)
     end.
+
+%% Every reply also contains the least significant 16 bits of the
+%% sequence number of the corresponding request.
+bump_seq(Seq) ->
+    (Seq+1) rem 16#ffff.
 
 %%
 %% Attempt to handle replies out of order
