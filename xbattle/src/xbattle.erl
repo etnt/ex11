@@ -374,15 +374,21 @@ get_ticker_pid(#cell_square{ticker_pid = Pid}) -> Pid.
 
 process_key(Canvas, _Board, Cell, Val, _Pos) ->
 
+    IsPumpStation = is_pump_station(Cell),
+
     case Val of
 
-        {char,$b} ->
+        {char,$b} when not(IsPumpStation) ->
             C0 = build(Canvas, Cell),
             maybe_start_ticker(C0);
 
         _ ->
             Cell
     end.
+
+
+is_pump_station(#cell_square{pump_station = Bool}) -> Bool.
+
 
 build(Canvas, #cell_square{build     = Build,
                            build_max = BuildMax,
