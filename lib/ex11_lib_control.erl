@@ -213,7 +213,8 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
             loop(Client, Driver, Seq, Display, D0, FreeIds);
         {sendCmd, C} ->
             %%io:format("~p(~p) Command:~p ~p~n",[?MODULE,?LINE,Seq,C]),
-            ex11_lib_driver:send_cmd(Driver, C),
+            %%ex11_lib_driver:send_cmd(Driver, C),
+            ex11_lib_driver:send_cmd_flush(Driver, C),
             loop(Client, Driver, bump_seq(Seq), Display, D0, FreeIds);
 
         {sendCmdFlush, C} ->
@@ -249,7 +250,8 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
 
 
         {reply, SeqNo, R} ->
-            io:format("Reply (~p) was ~p bytes: ~p~n",[SeqNo, size(R),R]),
+            io:format("~p(~p) Reply (~p) was ~p bytes: ~p~n",
+                      [?MODULE,?LINE,SeqNo,size(R),R]),
             case get_reply(SeqNo) of
                 {ok,From,ReplyType} ->
                     Parse = ex11_lib:pReply(ReplyType, R),
@@ -333,6 +335,7 @@ bump_seq(Seq) ->
     (Seq+1) rem 16#ffff.
 
 %%
+%% TEMP.FIX TO HANDLE THE PROBLEM OF THE SequenceNumbers GETTING OUT SYNC!!
 %% Attempt to handle replies out of order
 %%
 init_reply_list() ->
@@ -348,13 +351,23 @@ push_reply(Seq, From, ReplyType) ->
                 [{Seq,From,ReplyType,erlang:monotonic_time(second)} | L])
     end.
 
+
 get_reply(Seq) ->
-    case lists:keytake(Seq, 1, get(reply_list)) of
-        {value, {Seq,From,ReplyType,_Tc}, NewReplyList} ->
-            put(reply_list, NewReplyList),
+    case get(reply_list) of
+        [{_Seq,From,ReplyType,_Tc}] ->
+            %% We only expecting one Reply, ignore the SequenceNumber and
+            %% let's hope it is the correct one...
+            put(reply_list, []),
             {ok, From, ReplyType};
-        false ->
-            not_found
+
+        ReplyList ->
+            case lists:keytake(Seq, 1, ReplyList) of
+                {value, {Seq,From,ReplyType,_Tc}, NewReplyList} ->
+                    put(reply_list, NewReplyList),
+                    {ok, From, ReplyType};
+                false ->
+                    not_found
+            end
     end.
 
 gc_reply() ->
