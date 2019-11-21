@@ -1,6 +1,10 @@
 -ifndef(_EX11_LIB_COLORS_HRL).
 -define(_EX11_LIB_COLORS_HRL, true).
 
+
+-record(rgba, {r=0,g=0,b=0,a=0.5}).
+
+
 %% derived from /usr/X11R6/lib/X11/rgb.txt
 -define(snow,16#FFFAFA).
 -define(GhostWhite,16#F8F8FF).

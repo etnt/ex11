@@ -9,10 +9,9 @@
 -module(xbattle).
 
 -export([start/0]).
--export([add_rgb/2, add_rgb2/2]).
 
 -import(sw, [xStart/1]).
--import(swCanvas, [newPen/4, draw/3, delete/2]).
+-import(swCanvas, [newPen/4, delPen/2, draw/3, delete/2]).
 
 
 -include("xbattle.hrl").
@@ -45,7 +44,7 @@
 
           %% Are we a pump station?
           pump_station = false,
-          pump_color = blue,      % FIXME how to setup what (Pen)color to use?
+          pump_color,             % FIXME how to setup what (Pen)color to use?
 
           %% The cell (fluid) content
           bucket = [],            % [{Color,Percentage}, ... ]
@@ -165,8 +164,8 @@ start_cell_processes() ->
 
 draw_board(Canvas, #board{width = Width, height = Height} = B, Cell) ->
     newPen(Canvas, thin, ?black, 1),
-    newPen(Canvas, blue, ?blue, 1),
-    newPen(Canvas, black2, ?black, 2),
+    newPen(Canvas, pipe, ?black, 2),
+    newPen(Canvas, pump, ?black, 3),
 
     draw_cells(Canvas, B, Width, Height, Cell).
 
@@ -250,7 +249,8 @@ cell_loop(Controller, Canvas, Board, Cell) ->
         {click, Wx, Wy} ->
             Side = compute_side(Cell, Wx, Wy),
             %%?dbg("~p Side = ~p~n",[self(),Side]),
-            NewCell = toggle_pipe(Canvas, Cell, Side),
+            Cell1 = toggle_pipe(Canvas, Cell, Side),
+            NewCell = flow_pipes(Canvas, Cell1),
             cell_loop(Controller, Canvas, Board, NewCell);
 
         {key, {_State,_Key,_Type,Val}, {_Wx, _Wy} = Pos} ->
@@ -365,7 +365,7 @@ draw_pipe(Canvas,
                 south -> {Ox,Oy+Radius}
             end,
 
-    Id = draw(Canvas, black2, {line, Ox,Oy,X,Y}),
+    Id = draw(Canvas, pipe, {line, Ox,Oy,X,Y}),
 
     Cell#cell_square{pipes = [{Side,Id} | Pipes]}.
 
@@ -379,12 +379,33 @@ process_key(Canvas, _Board, Cell, Val, _Pos) ->
     case Val of
 
         {char,$b} when not(IsPumpStation) ->
-            C0 = build(Canvas, Cell),
-            maybe_start_ticker(C0);
+            Cell1 = maybe_newPen(Canvas, Cell, blue, ?blue, 1),
+            Cell2 = build(Canvas, Cell1),
+            maybe_start_ticker(Cell2);
+
+        %% TEMPORARY just to simulate an opponent...
+        {char,$p} when not(IsPumpStation) ->
+            Cell1 = maybe_newPen(Canvas, Cell, white, ?white, 1),
+            Cell2 = build(Canvas, Cell1),
+            maybe_start_ticker(Cell2);
 
         _ ->
             Cell
     end.
+
+
+maybe_newPen(Canvas,
+             #cell_square{pump_color = undefined} = Cell,
+             Name,
+             Color,
+             Size)
+  when is_integer(Color) ->
+    newPen(Canvas, Name, Color, Size),
+    Cell#cell_square{pump_color = Name};
+%%
+maybe_newPen(_Canvas, Cell, _Name, _Color, _Size) ->
+    Cell.
+
 
 
 is_pump_station(#cell_square{pump_station = Bool}) -> Bool.
@@ -405,7 +426,7 @@ build(Canvas, #cell_square{build     = Build,
     %% of the rectangle, and the path and extent of the arc is specified
     %% by angle2 relative to the start of the arc.
     Msg = {arc, X, Y, R-2, Build*90*64, 90*64},
-    draw(Canvas, black2, Msg),
+    draw(Canvas, pump, Msg),
 
     Cell#cell_square{build = Build+1};
 %%
@@ -713,16 +734,47 @@ animate_pump(Canvas,
     end.
 
 redraw_fluid(Canvas,
-             #cell_square{pump_color = Color,
-                          bucket     = Bucket,
-                          radius     = Radius} = Cell) ->
+             #cell_square{bucket = Bucket,
+                          radius = Radius} = Cell)
+  when Bucket =/= [] ->
 
-    Amount      = get_amount(Color, Bucket),
+    ?dbg("~p BUCKET: ~p~n",[self(),Bucket]),
+    Amount = lists:sum([ColorAmount || {_,ColorAmount} <- Bucket]),
+    Color  = blend_colors(Bucket),
+    ?dbg("~p COLOR: ~p~n",[self(),Color]),
+
+    ColorName = cell_color_name(),
+    delPen(Canvas, ColorName),
+    newPen(Canvas, ColorName, Color, 1),
+
     FluidRadius = erlang:trunc(Radius * (Amount/100)),
 
-    %% Note: Perhaps we should calculate the 'exact' fluid color
-    %% from the contents in the bucket!?
-    draw_fluid(Canvas, Cell, FluidRadius, Color).
+    draw_fluid(Canvas, Cell, FluidRadius, ColorName);
+%%
+redraw_fluid(_Canvas, Cell) ->
+    Cell.
+
+
+cell_color_name() ->
+    list_to_atom(pid_to_list(self())).
+
+
+blend_colors([{Color,_Amount}]) ->
+    ex11_lib_colors:color2rgb_int(Color);
+%%
+blend_colors([{Color1,_Amount1},{Color2,_Amount2}|L]) ->
+    NewColor = ex11_lib_colors:add_rgb2(ex11_lib_colors:color2rgb_int(Color1),
+                                        ex11_lib_colors:color2rgb_int(Color2)),
+    blend_colors(NewColor, L).
+
+
+blend_colors(NewColor, [{Color,_Amount}|L]) ->
+    NewColor = ex11_lib_colors:add_rgb2(ex11_lib_colors:color2rgb_int(NewColor),
+                                        ex11_lib_colors:color2rgb_int(Color)),
+    blend_colors(NewColor, L);
+%%
+blend_colors(Color, []) ->
+    Color.
 
 
 
@@ -734,7 +786,7 @@ draw_fluid(Canvas,
            Radius,
            Color) ->
 
-    Id = draw(Canvas, Color, {filledCircle, X, Y, Radius}),
+    Id = draw(Canvas, Color, {filledCircle, X, Y, Radius-2}),
     maybe_delete_object(Canvas, BucketId),
     NewCell = redraw_pipes(Canvas, Cell),
     NewCell#cell_square{bucket_id = Id}.
@@ -826,41 +878,3 @@ ticker(Pid) ->
             Pid ! {self(), tick},
             ticker(Pid)
     end.
-
-
-%%
-%% Alpha blending is the process of combining a translucent foreground color
-%% with a background color, thereby producing a new blended color.
-%% The degree of the foreground color's translucency may range from completely
-%% transparent to completely opaque. If the foreground color is completely
-%% transparent, the blended color will be the background color. Conversely,
-%% if it is completely opaque, the blended color will be the foreground color.
-%% The translucency can range between these extremes, in which case the blended
-%% color is computed as a weighted average of the foreground and background colors.
-%%
-%% https://stackoverflow.com/questions/726549/algorithm-for-additive-color-mixing-for-rgb-values
-%%
--record(rgba, {r=0,g=0,b=0,a=0.5}).
-
-add_rgb(FgColor, BgColor)
-  when is_integer(FgColor) andalso is_integer(BgColor) ->
-    add_rgb(color2rgba(FgColor), color2rgba(BgColor));
-%%
-add_rgb(X, Y) when is_record(X,rgba) andalso is_record(Y,rgba) ->
-    A = 1 - ((1 - X#rgba.a)*(1 - Y#rgba.a)),
-    #rgba{r = (X#rgba.r * X#rgba.a)/A + (Y#rgba.r * Y#rgba.a)*((1-X#rgba.a)/A),
-          g = (X#rgba.g * X#rgba.a)/A + (Y#rgba.g * Y#rgba.a)*((1-X#rgba.a)/A),
-          b = (X#rgba.b * X#rgba.a)/A + (Y#rgba.b * Y#rgba.a)*((1-X#rgba.a)/A)}.
-
-color2rgba(Color) ->
-    #rgba{r = (Color band 16#ff0000) bsr 16,
-          g = (Color band 16#00ff00) bsr 8,
-          b = (Color band 16#0000ff)}.
-
-%% Perhaps a more intuitive way of blending.
-add_rgb2(Color1, Color2) when is_integer(Color1) andalso is_integer(Color2) ->
-    A = color2rgba(Color1),
-    B = color2rgba(Color2),
-    #rgba{r = (A#rgba.r + B#rgba.r) div 2,
-          g = (A#rgba.g + B#rgba.g) div 2,
-          b = (A#rgba.b + B#rgba.b) div 2}.

@@ -15,6 +15,7 @@
          , delete_obj/2
          , make/7
          , newPen/4
+         , delPen/2
          , draw/3
          , getWin/1
          , delete/2]).
@@ -40,6 +41,7 @@
                    xColor/2,
                    xCreateGC/2,
                    xCreateGC/3,
+                   xDestroyGC/2,
                    xCreatePixmap/4,
                    xDo/2,
                    xFlush/1,
@@ -51,6 +53,9 @@ make(Parent, X, Y, Width, Ht, Border, Color) ->
 
 newPen(Pid, Pen, Color, Width) ->
     Pid ! {newPen, Pen, Color, Width}.
+
+delPen(Pid, Pen) ->
+    Pid ! {delPen, Pen}.
 
 draw(Pid, Pen, Obj) ->
     rpc(Pid, {draw, Pen, Obj}).
@@ -163,6 +168,16 @@ loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens,L,Free,F,BPress,KPress,Clear) ->
                              {line_style,solid},
                              {foreground, xColor(Display, Color)}]),
             Pens1 = dict:store(Name, GC1, Pens),
+            loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens1,
+                 L,Free,F,BPress,KPress,Clear);
+        {delPen, Name} ->
+            case dict:find(Name, Pens) of
+                {ok, PenGC} ->
+                    xDestroyGC(Display, PenGC),
+                    Pens1 = dict:erase(Name, Pens);
+                _ ->
+                    Pens1 = Pens
+            end,
             loop(Display,Pen0,GC,Wargs,Win,Canvas,Pens1,
                  L,Free,F,BPress,KPress,Clear);
         {From, {draw, Pen, Obj}} ->
