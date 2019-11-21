@@ -332,8 +332,8 @@ recv({unix, S}) ->
 recv({local, Fd}) ->
     receive
         {tcp,Fd,Data} ->
-            io:format("Received ~w bytes from server~n~p~n",
-                      [what_size(Data), Data]),
+            %%io:format("Received ~w bytes from server~n~p~n",
+            %%          [what_size(Data), Data]),
             Data
     end;
 recv({tcp, Fd}) ->
@@ -344,16 +344,17 @@ recv({tcp, Fd}) ->
             Data
     end.
 
-what_size(L) when is_list(L)   -> length(L);
-what_size(B) when is_binary(B) -> size(B).
+
+%%what_size(L) when is_list(L)   -> length(L);
+%%what_size(B) when is_binary(B) -> size(B).
 
 
 send({unix, S}, Bin) ->
     unixdom2:send(S, Bin),
     true;
 send({local, Fd}, Bin) ->
-    io:format("Sending ~w bytes to server~n~p~n",
-              [size(Bin), Bin]),
+    %%io:format("Sending ~w bytes to server~n~p~n",
+    %%          [size(Bin), Bin]),
     gen_tcp:send(Fd, Bin),
     %sleep(1500).
     true;

@@ -242,16 +242,16 @@ loop(Client, Driver, Seq, Display, D0, FreeIds) ->
         %%     end,
         %%     loop(Client, Driver, Seq+1, Display, D0, FreeIds);
         {From, {cmd, {call, C, ReplyType}}} ->
-            io:format("~p(~p) I want a reply type ~w to msg:~p~n",
-                      [?MODULE,?LINE,ReplyType,Seq]),
+            %%io:format("~p(~p) I want a reply type ~w to msg:~p~n",
+            %%          [?MODULE,?LINE,ReplyType,Seq]),
             push_reply(Seq, From, ReplyType),
             ex11_lib_driver:send_cmd_flush(Driver, C),
             loop(Client, Driver, bump_seq(Seq), Display, D0, FreeIds);
 
 
         {reply, SeqNo, R} ->
-            io:format("~p(~p) Reply (~p) was ~p bytes: ~p~n",
-                      [?MODULE,?LINE,SeqNo,size(R),R]),
+            %%io:format("~p(~p) Reply (~p) was ~p bytes: ~p~n",
+            %%          [?MODULE,?LINE,SeqNo,size(R),R]),
             case get_reply(SeqNo) of
                 {ok,From,ReplyType} ->
                     Parse = ex11_lib:pReply(ReplyType, R),

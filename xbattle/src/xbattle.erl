@@ -738,10 +738,8 @@ redraw_fluid(Canvas,
                           radius = Radius} = Cell)
   when Bucket =/= [] ->
 
-    ?dbg("~p BUCKET: ~p~n",[self(),Bucket]),
     Amount = lists:sum([ColorAmount || {_,ColorAmount} <- Bucket]),
     Color  = blend_colors(Bucket),
-    ?dbg("~p COLOR: ~p~n",[self(),Color]),
 
     ColorName = cell_color_name(),
     delPen(Canvas, ColorName),
