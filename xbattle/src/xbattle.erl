@@ -291,8 +291,10 @@ maybe_redraw_fluid(Canvas,
         {Amount,Amount} ->
             case {blend_colors(NewBucket), blend_colors(OldBucket)} of
                 {Color,Color} ->
+                    ?dbg("~p NO COLOR CHANGE~n",[self()]),
                     NewCell;   % nothing has changed, no need for a redraw!
-                _ ->
+                _X ->
+                    ?dbg("~p YES, COLOR CHANGE: ~p~n",[self(),_X]),
                     redraw_fluid(Canvas, NewCell)
             end;
         _ ->
@@ -300,7 +302,7 @@ maybe_redraw_fluid(Canvas,
     end.
 
 bucket_amount(#cell_square{bucket = Bucket}) ->
-    lists:sum([X || {_Color,X} <- Bucket]).
+    get_amount(Bucket).
 
 
 %% See: https://en.wikipedia.org/wiki/Atan2
@@ -555,7 +557,7 @@ compute_drop(Bucket, Quanta, Drop) ->
 
         {NewBucket, NewDrop} ->
 
-            RealQuanta = lists:sum([X || {_,X} <- NewDrop]),
+            RealQuanta = get_amount(NewDrop),
             if (RealQuanta < Quanta) ->
                     compute_drop(NewBucket,
                                  erlang:max(0,Quanta-RealQuanta),
@@ -594,13 +596,44 @@ fill_bucket(#cell_square{bucket = Bucket} = Cell, Drop) ->
     Cell#cell_square{bucket = NewBucket}.
 
 
-fill_up_bucket(Bucket, Drop) ->
-    lists:foldl(
-      fun({Color,Amount}, ABucket) ->
-              Bucket1 = inject_color(Color, Amount,  ABucket),
-              dilute_other_colors(Color, Amount, Bucket1)
-      end, Bucket, Drop).
+fill_up_bucket(Bucket, Drop0) ->
 
+    Drop         = [{C,erlang:round(X)} || {C,X} <- Drop0],
+    BucketAmount = get_amount(Bucket),
+    DropAmount   = get_amount(Drop),
+
+    if (BucketAmount + DropAmount) =< 100 ->
+
+            inject_colors(Bucket, Drop);
+
+       true ->
+
+            OverfullBucket = inject_colors(Bucket, Drop),
+            OverfullAmount = lists:sum([X || {_,X} <- OverfullBucket]),
+            Spillover      = OverfullAmount - 100,
+            SubSpill       = Spillover / length(OverfullBucket),
+
+            FullBucket =
+                lists:foldl(
+                  fun({C,A}, Acc) when A >= SubSpill ->
+                          [{C,erlang:trunc(A-SubSpill)} | Acc];
+                     (_, Acc) ->
+                          Acc   % removing color!
+                  end, [], OverfullBucket),
+
+            %% Gee...compensate for rounding errors...
+            compensate_for_rounding_errors(FullBucket)
+    end.
+
+compensate_for_rounding_errors(Bucket) ->
+    Amount = get_amount(Bucket),
+    if (Amount < 100) ->
+            AnalAdd = 100-Amount,
+            [{C0,A0} | L0] = Bucket,
+            [{C0,A0+AnalAdd} | L0];
+       true ->
+            Bucket
+    end.
 
 
 -ifdef(EUNIT).
@@ -616,23 +649,23 @@ fill_up_bucket_test_() ->
           fill_up_bucket([{blue,25}], [{blue,25}]))
 
      , ?_assertEqual(
-          [{blue,37}, {white,12}],
-          fill_up_bucket([{blue,25}], [{blue,12}, {white,12}]))
+          [{white,13}, {blue,87}],
+          %% A bucket, 100% filled with blue, we pour in 25%
+          %% white, then 25% will spill over, 12.5% blue and
+          %% white respectively.
+          fill_up_bucket([{blue,100}], [{white,25}]))
 
      , ?_assertEqual(
-          [{blue,75}, {white,25}],
-          %% The Bucket is full, so no change should happen
-          fill_up_bucket([{blue,75}, {white,25}], [{blue,12}, {white,12}]))
+          [{white,13}, {blue,87}],
+           fill_up_bucket([{blue,75}], [{white,12.5}, {blue,12.5}]))
 
      , ?_assertEqual(
-          [{blue,85}, {white,15}],
-          %% The Bucket will become full, so not all amount should be added
-          fill_up_bucket([{blue,80}, {white,10}], [{blue,12}, {white,12}]))
+          [{blue,68},{white,13}],
+           fill_up_bucket([{blue,55}], [{white,12.5}, {blue,12.5}]))
 
      , ?_assertEqual(
-          [{blue,90}, {white,10}],
-          %% The Bucket will become full, so not all amount should be added
-          fill_up_bucket([{blue,90}, {white,5}], [{white,25}]))
+          [{red,4},{white,13},{blue,83}],
+           fill_up_bucket([{blue,80}], [{blue,5}, {white,15}, {red,5}]))
 
      ].
 
@@ -645,16 +678,22 @@ fill_up_bucket_test_() ->
 animate_pump(Canvas,
              #cell_square{bucket = Bucket} = Cell) ->
 
-    {Radius, Color, NewBucket} = pump(Cell),
+    NewBucket = pump(Cell),
 
-    OldAmount = get_amount(Color, Bucket),
-    NewAmount = get_amount(Color, NewBucket),
+    OldAmount = get_amount(Bucket),
+    NewAmount = get_amount(NewBucket),
 
     if OldAmount == NewAmount ->
-            Cell;
+            case {blend_colors(Bucket), blend_colors(NewBucket)} of
+                {C,C} ->
+                    Cell;
+                _ ->
+                    NewCell = Cell#cell_square{bucket = NewBucket},
+                    redraw_fluid(Canvas, NewCell)
+            end;
        true ->
             NewCell = Cell#cell_square{bucket = NewBucket},
-            draw_fluid(Canvas, NewCell, Radius, Color)
+            redraw_fluid(Canvas, NewCell)
     end.
 
 redraw_fluid(Canvas,
@@ -662,7 +701,7 @@ redraw_fluid(Canvas,
                           radius = Radius} = Cell)
   when Bucket =/= [] ->
 
-    Amount = lists:sum([ColorAmount || {_,ColorAmount} <- Bucket]),
+    Amount = get_amount(Bucket),
     Color  = blend_colors(Bucket),
 
     ColorName = cell_color_name(),
@@ -717,49 +756,25 @@ draw_fluid(Canvas,
 
 %% We have hard coded the amount of fluid to
 %% be pumped in a pre-defined Quanta.
-pump(#cell_square{radius     = Radius,
-                  pump_color = Color,
+pump(#cell_square{pump_color = Color,
                   bucket     = Bucket}) ->
-    Bucket1   = inject_color(Color, ?quanta,  Bucket),
-    NewBucket = dilute_other_colors(Color, ?quanta, Bucket1),
-    Amount    = get_amount(Color, NewBucket),
 
-    {erlang:trunc(Radius * (Amount/100)), % current amount of cell fluid
-     Color,                            % FIXME a mix of colors if more than one?
-     NewBucket}.
+    fill_up_bucket(Bucket, [{Color, ?quanta}]).
 
 
-%% We add Quanta amount of Color to the Bucket,
-%% then subtract Quanta/(Colors-1) from the other
-%% existing colors.
-dilute_other_colors(Color, Quanta, Bucket)
-  when length(Bucket) > 1 ->
 
-    Num = length(Bucket) - 1,
-    SubAmount = erlang:trunc(Quanta/Num),
+get_amount(Bucket) ->
+    lists:sum([ColorAmount || {_,ColorAmount} <- Bucket]).
+
+
+inject_colors(Bucket, Drop) ->
     lists:foldl(
-      fun({C,_} = Item, Acc) when C == Color ->
-              [Item | Acc];
-         ({C,A}, Acc) ->
-              case erlang:max(0, A - SubAmount) of
-                  0 -> Acc;                         % remove color!
-                  Q -> [{C,Q} | Acc]
-              end
-      end, [], Bucket);
-%%
-dilute_other_colors(_Color, _quanta, Bucket) ->
-    Bucket.
-
-
-get_amount(Color, Bucket) ->
-    case lists:keyfind(Color, 1, Bucket) of
-        {_,Amount}  -> Amount;
-        _           -> 0
-    end.
+      fun({Color,Amount}, ABucket) ->
+              inject_color(Color, Amount,  ABucket)
+      end, Bucket, Drop).
 
 inject_color(Color, Quanta, [{Color,Amount} | L]) ->
-    NewAmount = Amount + Quanta,
-    [{Color, erlang:min(100, NewAmount)} | L];
+    [{Color, Amount + Quanta} | L];
 inject_color(Color, Quanta, [H|T]) ->
     [H | inject_color(Color, Quanta, T)];
 inject_color(Color, Quanta, []) ->
