@@ -20,6 +20,6 @@ run:
 erl:
 	erl -pa ../ebin -pa ../../widgets -pa ../../lib
 
-debug:
+test:
 	$(MAKE) ERLC_FLAGS="$(ERLC_FLAGS) -Ddebug"
 	erl -noshell -pa ../ebin -pa ../../widgets -pa ../../lib -s xbattle test -s init stop

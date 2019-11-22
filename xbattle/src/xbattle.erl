@@ -590,14 +590,16 @@ add(Item, [])                      -> [Item].
 %% We try to do the cut in a fair way.
 fill_bucket(#cell_square{bucket = Bucket} = Cell, Drop) ->
 
-    NewBucket =
-        lists:foldl(
-          fun({Color,Amount}, ABucket) ->
-                  Bucket1   = inject_color(Color, Amount,  ABucket),
-                  dilute_other_colors(Color, Amount, Bucket1)
-          end, Bucket, Drop),
-
+    NewBucket = fill_up_bucket(Bucket, Drop),
     Cell#cell_square{bucket = NewBucket}.
+
+
+fill_up_bucket(Bucket, Drop) ->
+    lists:foldl(
+      fun({Color,Amount}, ABucket) ->
+              Bucket1 = inject_color(Color, Amount,  ABucket),
+              dilute_other_colors(Color, Amount, Bucket1)
+      end, Bucket, Drop).
 
 
 
