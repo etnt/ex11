@@ -9,6 +9,7 @@
 -module(xbattle).
 
 -export([start/0]).
+-export([blend_colors/1]).
 
 -import(sw, [xStart/1]).
 -import(swCanvas, [newPen/4, delPen/2, draw/3, delete/2]).
@@ -720,23 +721,58 @@ cell_color_name() ->
     list_to_atom(pid_to_list(self())).
 
 
+%% How do we emulate mixing colors in a bucket?
+%% Our approach:
+%% We only mix colors of equal amount.
+%% Any spillover when mixing two colors is put
+%% in the queue for color mixing again.
+%% Q: Is it a good approach?
+%% A: Dunno...but it looks pretty cool...
 blend_colors([{Color,_Amount}]) ->
-    ex11_lib_colors:color2rgb_int(Color);
+        color2int(Color);
+blend_colors(L) ->
+    blend_sorted_colors(color_sort(L)).
+
+%% Only one color (left), trivial case
+blend_sorted_colors([{Color,_Amount}]) ->
+    color2int(Color);
 %%
-blend_colors([{Color1,_Amount1},{Color2,_Amount2}|L]) ->
-    NewColor = ex11_lib_colors:add_rgb2(ex11_lib_colors:color2rgb_int(Color1),
-                                        ex11_lib_colors:color2rgb_int(Color2)),
-    blend_colors(NewColor, L).
+%% Two colors of the same amount; mix them and then mix
+%% the result with the rest of the colors.
+blend_sorted_colors([{Color1,Amount},{Color2,Amount}|L]) ->
+    MixColor1 = ex11_lib_colors:add_rgb2(color2int(Color1),
+                                         color2int(Color2)),
 
+    case L of
+        [] ->
+            MixColor1;
+        _ ->
+            MixColor2 = blend_sorted_colors(L),
 
-blend_colors(NewColor, [{Color,_Amount}|L]) ->
-    NewColor = ex11_lib_colors:add_rgb2(ex11_lib_colors:color2rgb_int(NewColor),
-                                        ex11_lib_colors:color2rgb_int(Color)),
-    blend_colors(NewColor, L);
+            ex11_lib_colors:add_rgb2(color2int(MixColor1),
+                                     color2int(MixColor2))
+    end;
 %%
-blend_colors(Color, []) ->
-    Color.
+%% Two colors of the different amount; mix them equally and then mix
+%% the result with the rest of the colors, where the spillover color
+%% has been inserted in the mixing queue.
+blend_sorted_colors([{Color1,Amount1},{Color2,Amount2}|L])
+  when Amount1 > Amount2 ->
+    MixColor1 = ex11_lib_colors:add_rgb2(color2int(Color1),
+                                         color2int(Color2)),
 
+    MixColor2 = blend_sorted_colors(color_sort([{Color1,Amount1-Amount2}|L])),
+
+    ex11_lib_colors:add_rgb2(color2int(MixColor1),
+                             color2int(MixColor2)).
+
+
+color2int(C) when is_atom(C)    -> ex11_lib_colors:color2rgb_int(C);
+color2int(I) when is_integer(I) -> I.
+
+
+color_sort(L) ->
+    lists:sort(fun({_,X},{_,Y}) when X>=Y -> true; (_,_) -> false end,L).
 
 
 draw_fluid(Canvas,
